@@ -1,0 +1,10 @@
+CREATE TABLE "OptionGroup" ("id" UUID NOT NULL, "storeId" UUID NOT NULL, "name" TEXT NOT NULL, "minSelections" INTEGER NOT NULL DEFAULT 0, "maxSelections" INTEGER NOT NULL DEFAULT 1, CONSTRAINT "OptionGroup_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "Option" ("id" UUID NOT NULL, "optionGroupId" UUID NOT NULL, "name" TEXT NOT NULL, "priceDelta" INTEGER NOT NULL DEFAULT 0, "isSoldOut" BOOLEAN NOT NULL DEFAULT false, CONSTRAINT "Option_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "ProductOptionGroup" ("productId" UUID NOT NULL, "optionGroupId" UUID NOT NULL, CONSTRAINT "ProductOptionGroup_pkey" PRIMARY KEY ("productId","optionGroupId"));
+CREATE UNIQUE INDEX "OptionGroup_storeId_name_key" ON "OptionGroup"("storeId", "name");
+CREATE UNIQUE INDEX "Option_optionGroupId_name_key" ON "Option"("optionGroupId", "name");
+CREATE UNIQUE INDEX "ProductVariant_productId_name_key" ON "ProductVariant"("productId", "name");
+ALTER TABLE "OptionGroup" ADD CONSTRAINT "OptionGroup_storeId_fkey" FOREIGN KEY ("storeId") REFERENCES "Store"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Option" ADD CONSTRAINT "Option_optionGroupId_fkey" FOREIGN KEY ("optionGroupId") REFERENCES "OptionGroup"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ProductOptionGroup" ADD CONSTRAINT "ProductOptionGroup_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ProductOptionGroup" ADD CONSTRAINT "ProductOptionGroup_optionGroupId_fkey" FOREIGN KEY ("optionGroupId") REFERENCES "OptionGroup"("id") ON DELETE CASCADE ON UPDATE CASCADE;

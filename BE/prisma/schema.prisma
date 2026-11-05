@@ -1,0 +1,882 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "debian-openssl-1.1.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Store {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  timezone  String   @default("Asia/Ho_Chi_Minh")
+  members   StoreMember[]
+  categories Category[]
+  products Product[]
+  optionGroups OptionGroup[]
+  shifts Shift[]
+  cashRegisters CashRegister[]
+  orders Order[]
+  payments Payment[]
+  vietQrPaymentRequests VietQrPaymentRequest[]
+  fulfillmentTickets FulfillmentTicket[]
+  idempotencyRecords IdempotencyRecord[]
+  suppliers Supplier[]
+  inventoryLocations InventoryLocation[]
+  ingredients Ingredient[]
+  stockLots StockLot[]
+  goodsReceipts GoodsReceipt[]
+  inventoryLedgerEntries InventoryLedgerEntry[]
+  stockCounts StockCount[]
+  inventoryTransfers InventoryTransfer[]
+  inventoryWastes InventoryWaste[]
+  recipeRevisions RecipeRevision[]
+  auditLogs AuditLog[]
+  campaigns Campaign[]
+  phone                 String?
+  address               String?
+  taxRate               Float                 @default(0.08)
+  taxCode               String?
+  receiptHeader         String?
+  receiptFooter         String?
+  openingTime           String                @default("08:00")
+  closingTime           String                @default("22:00")
+  inventoryPolicy       InventoryPolicy       @default(OPTIONAL)
+  tables                DiningTable[]
+  reservations          Reservation[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Category {
+  id String @id @default(uuid()) @db.Uuid
+  storeId String @db.Uuid
+  name String
+  sortOrder Int @default(0)
+  isActive Boolean @default(true)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products Product[]
+  @@unique([storeId, name])
+}
+
+model Product {
+  id String @id @default(uuid()) @db.Uuid
+  storeId String @db.Uuid
+  categoryId String @db.Uuid
+  name String
+  imageUrl String?
+  isSoldOut Boolean @default(false)
+  isActive Boolean @default(true)
+  inventoryMode InventoryMode @default(NOT_TRACKED)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id])
+  variants ProductVariant[]
+  optionGroups ProductOptionGroup[]
+  recipeRevisions RecipeRevision[]
+  @@index([storeId, categoryId])
+}
+
+model ProductVariant {
+  id String @id @default(uuid()) @db.Uuid
+  productId String @db.Uuid
+  name String
+  isSoldOut Boolean @default(false)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  prices PriceSchedule[]
+  @@unique([productId, name])
+}
+
+model OptionGroup {
+  id String @id @default(uuid()) @db.Uuid
+  storeId String @db.Uuid
+  name String
+  minSelections Int @default(0)
+  maxSelections Int @default(1)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  options Option[]
+  products ProductOptionGroup[]
+  @@unique([storeId, name])
+}
+
+model Option {
+  id String @id @default(uuid()) @db.Uuid
+  optionGroupId String @db.Uuid
+  name String
+  priceDelta Int @default(0)
+  isSoldOut Boolean @default(false)
+  group OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+  @@unique([optionGroupId, name])
+}
+
+model ProductOptionGroup {
+  productId String @db.Uuid
+  optionGroupId String @db.Uuid
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  optionGroup OptionGroup @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+  @@id([productId, optionGroupId])
+}
+
+model PriceSchedule {
+  id String @id @default(uuid()) @db.Uuid
+  variantId String @db.Uuid
+  amount Int
+  startsAt DateTime @default(now())
+  endsAt DateTime?
+  variant ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  @@index([variantId, startsAt])
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+// A store can be rolled out in stages. STRICT is the production policy for
+// kitchen products: a tracked product must have a recipe and prepared stock.
+enum InventoryPolicy {
+  OPTIONAL
+  STRICT
+}
+
+enum CashMovementKind {
+  OPENING_FLOAT
+  CASH_SALE
+  REFUND
+  ADJUSTMENT
+}
+
+enum OrderStatus {
+  AWAITING_PAYMENT
+  PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  QR_MANUAL
+  QR_VIETQR
+}
+
+enum PaymentStatus {
+  CAPTURED
+  VOIDED
+  REFUNDED
+}
+
+enum IdempotencyScope {
+  OPEN_SHIFT
+  CLOSE_SHIFT
+  CREATE_ORDER
+  CAPTURE_PAYMENT
+  CANCEL_ORDER
+  REFUND_PAYMENT
+  CASH_ADJUSTMENT
+  RECEIVE_INVENTORY
+}
+
+enum FulfillmentStatus {
+  QUEUED
+  PREPARING
+  READY
+  HANDED_OVER
+  VOIDED
+}
+
+enum InventoryUnit {
+  GRAM
+  MILLILITER
+  EACH
+}
+
+enum InventoryLocationKind {
+  STORAGE
+  PREP
+}
+
+enum InventoryLedgerType {
+  RECEIPT
+  TRANSFER_OUT
+  TRANSFER_IN
+  COUNT_ADJUSTMENT
+  WASTE
+  CONSUMPTION
+}
+
+enum InventoryMode {
+  TRACKED
+  NOT_TRACKED
+}
+
+enum CampaignStatus {
+  DRAFT
+  PUBLISHED
+  DISABLED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum VoucherRedemptionStatus {
+  RESERVED
+  REDEEMED
+  RELEASED
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  SEATED
+  CANCELLED
+  COMPLETED
+}
+
+enum OrderSource {
+  POS
+  TABLE_QR
+  TAKEAWAY
+}
+
+model Shift {
+  // PostgreSQL partial unique index `Shift_one_open_per_register` is maintained in migrations.
+  id            String      @id @default(uuid()) @db.Uuid
+  storeId       String      @db.Uuid
+  registerId    String?     @db.Uuid
+  status        ShiftStatus @default(OPEN)
+  openedById    String      @db.Uuid
+  openingCash   Int         @default(0)
+  closedById    String?     @db.Uuid
+  declaredCash  Int?
+  expectedCash  Int?
+  variance      Int?
+  openedAt      DateTime    @default(now())
+  closedAt      DateTime?
+  store         Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  register      CashRegister? @relation(fields: [registerId], references: [id], onDelete: Restrict)
+  cashMovements CashMovement[]
+  payments      Payment[]
+
+  @@index([storeId, status])
+  @@index([registerId, status])
+}
+
+model CashRegister {
+  id        String   @id @default(uuid()) @db.Uuid
+  storeId   String   @db.Uuid
+  name      String
+  code      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  shifts    Shift[]
+
+  @@unique([storeId, code])
+  @@index([storeId, isActive])
+}
+
+model CashMovement {
+  id        String           @id @default(uuid()) @db.Uuid
+  storeId   String           @db.Uuid
+  shiftId   String           @db.Uuid
+  paymentId String?          @db.Uuid
+  kind      CashMovementKind
+  amount    Int
+  note      String?
+  createdAt DateTime         @default(now())
+  shift     Shift            @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  payment   Payment?         @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, shiftId])
+}
+
+model Order {
+  id          String      @id @default(uuid()) @db.Uuid
+  storeId     String      @db.Uuid
+  createdById String      @db.Uuid
+  status      OrderStatus @default(AWAITING_PAYMENT)
+  subtotalAmount Int @default(0)
+  discountAmount Int @default(0)
+  taxRate     Float       @default(0)
+  taxAmount   Int         @default(0)
+  totalAmount Int
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  cancelledById String?   @db.Uuid
+  cancelledAt DateTime?
+  cancellationNote String?
+  tableId     String?     @db.Uuid
+  source      OrderSource @default(POS)
+  store       Store       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  table       DiningTable? @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  items       OrderItem[]
+  payments    Payment[]
+  fulfillmentTicket FulfillmentTicket?
+  vietQrPaymentRequest VietQrPaymentRequest?
+  voucherRedemption VoucherRedemption?
+
+  @@index([storeId, createdAt])
+  @@index([storeId, tableId])
+}
+
+model DiningTable {
+  id          String        @id @default(uuid()) @db.Uuid
+  storeId     String        @db.Uuid
+  code        String
+  name        String
+  capacity    Int           @default(4)
+  status      TableStatus   @default(AVAILABLE)
+  qrCodeToken String        @unique @default(uuid())
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  store       Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  reservations Reservation[]
+  orders      Order[]
+
+  @@unique([storeId, code])
+  @@index([storeId, status])
+}
+
+model Reservation {
+  id              String            @id @default(uuid()) @db.Uuid
+  storeId         String            @db.Uuid
+  tableId         String?           @db.Uuid
+  customerName    String
+  customerPhone   String
+  customerEmail   String?
+  guestCount      Int
+  reservationTime DateTime
+  durationMinutes Int               @default(90)
+  status          ReservationStatus @default(PENDING)
+  specialNotes    String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  store           Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  table           DiningTable?      @relation(fields: [tableId], references: [id], onDelete: SetNull)
+
+  @@index([storeId, reservationTime, status])
+  @@index([tableId, reservationTime])
+}
+
+model Campaign {
+  id              String         @id @default(uuid()) @db.Uuid
+  storeId         String         @db.Uuid
+  name            String
+  status          CampaignStatus @default(DRAFT)
+  discountType    DiscountType
+  discountValue   Int
+  minOrderAmount  Int            @default(0)
+  maxDiscountAmount Int?
+  redemptionQuota Int?
+  startsAt        DateTime
+  endsAt          DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  store           Store          @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  vouchers        Voucher[]
+  redemptions     VoucherRedemption[]
+
+  @@index([storeId, status, startsAt])
+}
+
+model Voucher {
+  id              String   @id @default(uuid()) @db.Uuid
+  campaignId      String   @db.Uuid
+  code            String   @unique
+  redemptionQuota Int?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  campaign        Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  redemptions     VoucherRedemption[]
+
+  @@index([campaignId, isActive])
+}
+
+model VoucherRedemption {
+  id             String                  @id @default(uuid()) @db.Uuid
+  storeId        String                  @db.Uuid
+  campaignId     String                  @db.Uuid
+  voucherId      String                  @db.Uuid
+  orderId        String                  @unique @db.Uuid
+  status         VoucherRedemptionStatus @default(RESERVED)
+  discountAmount Int
+  reservedAt     DateTime                @default(now())
+  redeemedAt     DateTime?
+  releasedAt     DateTime?
+  releaseReason  String?
+  campaign       Campaign                @relation(fields: [campaignId], references: [id], onDelete: Restrict)
+  voucher        Voucher                 @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  order          Order                   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, status])
+  @@index([voucherId, status])
+  @@index([storeId, reservedAt])
+}
+
+model OrderItem {
+  id              String @id @default(uuid()) @db.Uuid
+  orderId         String @db.Uuid
+  productId       String @db.Uuid
+  variantId       String @db.Uuid
+  productName     String
+  variantName     String
+  unitPrice       Int
+  quantity        Int
+  optionsSnapshot Json
+  lineTotal       Int
+  order           Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model Payment {
+  id           String        @id @default(uuid()) @db.Uuid
+  storeId      String        @db.Uuid
+  orderId      String        @db.Uuid
+  shiftId      String?       @db.Uuid
+  method       PaymentMethod
+  status       PaymentStatus @default(CAPTURED)
+  amount       Int
+  capturedById String        @db.Uuid
+  capturedAt   DateTime      @default(now())
+  refundedById String?       @db.Uuid
+  refundedAt   DateTime?
+  refundNote   String?
+  // VietQR transactionId. A unique provider reference makes callback retries
+  // safe without trusting a caller-supplied idempotency header.
+  providerTransactionId String? @unique
+  store        Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order        Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  shift        Shift?        @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  cashMovements CashMovement[]
+
+  @@index([storeId, orderId])
+}
+
+// A generated dynamic VietQR code is a payment intent, not a completed payment.
+// The short provider reference is kept separate because VietQR limits orderId to
+// 13 characters while internal order IDs are UUIDs.
+model VietQrPaymentRequest {
+  id             String   @id @default(uuid()) @db.Uuid
+  storeId        String   @db.Uuid
+  orderId        String   @unique @db.Uuid
+  orderReference String   @unique @db.VarChar(32)
+  amount         Int
+  content        String   @db.VarChar(255)
+  qrCode         String   @db.Text
+  qrLink         String?  @db.Text
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  store          Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, createdAt])
+}
+
+model FulfillmentTicket {
+  id              String            @id @default(uuid()) @db.Uuid
+  storeId         String            @db.Uuid
+  orderId         String            @unique @db.Uuid
+  status          FulfillmentStatus @default(QUEUED)
+  priority        Int               @default(0)
+  queuedAt        DateTime          @default(now())
+  preparingAt     DateTime?
+  readyAt         DateTime?
+  handedOverAt    DateTime?
+  voidedAt        DateTime?
+  preparingById   String?           @db.Uuid
+  readyById       String?           @db.Uuid
+  handedOverById  String?           @db.Uuid
+  voidedById      String?           @db.Uuid
+  voidReason      String?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  store           Store             @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order           Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items           FulfillmentTicketItem[]
+  events          FulfillmentTicketEvent[]
+
+  @@index([storeId, status, priority, queuedAt])
+}
+
+model FulfillmentTicketItem {
+  id              String            @id @default(uuid()) @db.Uuid
+  ticketId        String            @db.Uuid
+  orderItemId     String            @db.Uuid
+  productName     String
+  variantName     String
+  quantity        Int
+  optionsSnapshot Json
+  inventoryMode   InventoryMode
+  recipeSnapshot  Json?
+  ticket          FulfillmentTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+}
+
+model FulfillmentTicketEvent {
+  id          String            @id @default(uuid()) @db.Uuid
+  ticketId    String            @db.Uuid
+  fromStatus  FulfillmentStatus?
+  toStatus    FulfillmentStatus
+  actorId     String            @db.Uuid
+  note        String?
+  createdAt   DateTime          @default(now())
+  ticket      FulfillmentTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+}
+
+model IdempotencyRecord {
+  id        String           @id @default(uuid()) @db.Uuid
+  storeId   String           @db.Uuid
+  scope     IdempotencyScope
+  key       String
+  orderId   String?          @db.Uuid
+  paymentId String?          @db.Uuid
+  shiftId   String?          @db.Uuid
+  receiptId String?          @db.Uuid
+  createdAt DateTime         @default(now())
+  store     Store            @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, scope, key])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  storeId    String?  @db.Uuid
+  actorId    String?  @db.Uuid
+  action     String
+  targetType String
+  targetId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  store      Store?   @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+}
+
+model Supplier {
+  id        String   @id @default(uuid()) @db.Uuid
+  storeId   String   @db.Uuid
+  name      String
+  phone     String?
+  note      String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  receipts  GoodsReceipt[]
+  lots      StockLot[]
+
+  @@unique([storeId, name])
+  @@index([storeId, isActive])
+}
+
+model InventoryLocation {
+  id        String                @id @default(uuid()) @db.Uuid
+  storeId   String                @db.Uuid
+  name      String
+  kind      InventoryLocationKind @default(STORAGE)
+  isActive  Boolean               @default(true)
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+  store     Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  ledgerEntries InventoryLedgerEntry[]
+  receipts  GoodsReceipt[]
+  counts    StockCount[]
+  transfersFrom InventoryTransfer[] @relation("TransferFromLocation")
+  transfersTo InventoryTransfer[] @relation("TransferToLocation")
+  wastes    InventoryWaste[]
+
+  @@unique([storeId, name])
+  @@index([storeId, isActive])
+}
+
+model Ingredient {
+  id        String        @id @default(uuid()) @db.Uuid
+  storeId   String        @db.Uuid
+  sku       String
+  name      String
+  unit      InventoryUnit
+  lowStockQuantity Int?
+  isActive  Boolean       @default(true)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  store     Store         @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  lots      StockLot[]
+  receiptLines GoodsReceiptLine[]
+  ledgerEntries InventoryLedgerEntry[]
+  counts    StockCount[]
+  transfers InventoryTransfer[]
+  wastes    InventoryWaste[]
+  recipeLines RecipeLine[]
+
+  @@unique([storeId, sku])
+  @@unique([storeId, name])
+  @@index([storeId, isActive])
+}
+
+model GoodsReceipt {
+  id          String   @id @default(uuid()) @db.Uuid
+  storeId     String   @db.Uuid
+  supplierId  String?  @db.Uuid
+  locationId  String   @db.Uuid
+  reference   String?
+  receivedAt  DateTime @default(now())
+  receivedById String  @db.Uuid
+  note        String?
+  createdAt   DateTime @default(now())
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  supplier    Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  location    InventoryLocation @relation(fields: [locationId], references: [id])
+  lines       GoodsReceiptLine[]
+
+  @@index([storeId, receivedAt])
+  @@index([locationId, receivedAt])
+}
+
+model GoodsReceiptLine {
+  id          String       @id @default(uuid()) @db.Uuid
+  receiptId   String       @db.Uuid
+  ingredientId String      @db.Uuid
+  quantity    Int
+  unitCost    Int
+  lotCode     String
+  expiresAt   DateTime?
+  receipt     GoodsReceipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  ingredient  Ingredient   @relation(fields: [ingredientId], references: [id])
+  lot         StockLot?
+
+  @@index([receiptId])
+  @@index([ingredientId])
+}
+
+model StockLot {
+  id          String       @id @default(uuid()) @db.Uuid
+  storeId     String       @db.Uuid
+  ingredientId String      @db.Uuid
+  supplierId  String?      @db.Uuid
+  receiptLineId String     @unique @db.Uuid
+  code        String
+  receivedAt  DateTime
+  expiresAt   DateTime?
+  unitCost    Int
+  createdAt   DateTime     @default(now())
+  store       Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  ingredient  Ingredient   @relation(fields: [ingredientId], references: [id])
+  supplier    Supplier?    @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  receiptLine GoodsReceiptLine @relation(fields: [receiptLineId], references: [id], onDelete: Cascade)
+  ledgerEntries InventoryLedgerEntry[]
+  counts      StockCount[]
+  transfers   InventoryTransfer[]
+  wastes      InventoryWaste[]
+
+  @@unique([storeId, code])
+  @@index([ingredientId, expiresAt])
+}
+
+model InventoryLedgerEntry {
+  id          String              @id @default(uuid()) @db.Uuid
+  storeId     String              @db.Uuid
+  ingredientId String             @db.Uuid
+  locationId  String              @db.Uuid
+  lotId       String?             @db.Uuid
+  type        InventoryLedgerType
+  quantity    Int
+  sourceType  String
+  sourceId    String              @db.Uuid
+  note        String?
+  occurredAt  DateTime            @default(now())
+  actorId     String              @db.Uuid
+  store       Store               @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  ingredient  Ingredient          @relation(fields: [ingredientId], references: [id])
+  location    InventoryLocation   @relation(fields: [locationId], references: [id])
+  lot         StockLot?           @relation(fields: [lotId], references: [id])
+
+  @@index([storeId, ingredientId, locationId, occurredAt])
+  @@index([lotId, occurredAt])
+  @@index([sourceType, sourceId])
+}
+
+model StockCount {
+  id               String   @id @default(uuid()) @db.Uuid
+  storeId          String   @db.Uuid
+  ingredientId     String   @db.Uuid
+  locationId       String   @db.Uuid
+  lotId            String?  @db.Uuid
+  expectedQuantity Int
+  countedQuantity  Int
+  varianceQuantity Int
+  reason           String
+  countedById      String   @db.Uuid
+  countedAt        DateTime @default(now())
+  store            Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  ingredient       Ingredient @relation(fields: [ingredientId], references: [id])
+  location         InventoryLocation @relation(fields: [locationId], references: [id])
+  lot              StockLot? @relation(fields: [lotId], references: [id])
+
+  @@index([storeId, countedAt])
+  @@index([ingredientId, locationId])
+}
+
+model InventoryTransfer {
+  id             String   @id @default(uuid()) @db.Uuid
+  storeId        String   @db.Uuid
+  ingredientId   String   @db.Uuid
+  lotId          String?  @db.Uuid
+  fromLocationId String   @db.Uuid
+  toLocationId   String   @db.Uuid
+  quantity       Int
+  note           String?
+  transferredById String  @db.Uuid
+  transferredAt  DateTime @default(now())
+  store          Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  ingredient     Ingredient @relation(fields: [ingredientId], references: [id])
+  lot            StockLot? @relation(fields: [lotId], references: [id])
+  fromLocation   InventoryLocation @relation("TransferFromLocation", fields: [fromLocationId], references: [id])
+  toLocation     InventoryLocation @relation("TransferToLocation", fields: [toLocationId], references: [id])
+
+  @@index([storeId, transferredAt])
+  @@index([fromLocationId, toLocationId])
+}
+
+model InventoryWaste {
+  id          String   @id @default(uuid()) @db.Uuid
+  storeId     String   @db.Uuid
+  ingredientId String  @db.Uuid
+  locationId  String   @db.Uuid
+  lotId       String?  @db.Uuid
+  quantity    Int
+  reason      String
+  wastedById  String   @db.Uuid
+  wastedAt    DateTime @default(now())
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  ingredient  Ingredient @relation(fields: [ingredientId], references: [id])
+  location    InventoryLocation @relation(fields: [locationId], references: [id])
+  lot         StockLot? @relation(fields: [lotId], references: [id])
+
+  @@index([storeId, wastedAt])
+  @@index([ingredientId, locationId])
+}
+
+model RecipeRevision {
+  id          String   @id @default(uuid()) @db.Uuid
+  storeId     String   @db.Uuid
+  productId   String   @db.Uuid
+  version     Int
+  isActive    Boolean  @default(true)
+  createdById String   @db.Uuid
+  createdAt   DateTime @default(now())
+  store       Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lines       RecipeLine[]
+
+  @@unique([productId, version])
+  @@index([storeId, productId, isActive])
+}
+
+model RecipeLine {
+  id          String         @id @default(uuid()) @db.Uuid
+  recipeId    String         @db.Uuid
+  ingredientId String        @db.Uuid
+  quantity    Int
+  recipe      RecipeRevision @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient  Ingredient     @relation(fields: [ingredientId], references: [id])
+
+  @@unique([recipeId, ingredientId])
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  CASHIER
+  KITCHEN
+  INVENTORY_CLERK
+}
+
+model User {
+  id           String        @id @default(uuid()) @db.Uuid
+  email        String        @unique
+  passwordHash String
+  role         UserRole
+  isActive     Boolean       @default(true)
+  authVersion  Int           @default(1)
+  isPlatformAdmin Boolean    @default(false)
+  memberships  StoreMember[]
+  sessions     Session[]
+  roleLinks    UserRoleLink[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Role {
+  id          String             @id @default(uuid()) @db.Uuid
+  key         String             @unique
+  name        String
+  permissions RolePermission[]
+  users       UserRoleLink[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+model Permission {
+  id        String           @id @default(uuid()) @db.Uuid
+  key       String           @unique
+  roles     RolePermission[]
+  createdAt DateTime         @default(now())
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  @@id([roleId, permissionId])
+}
+
+model UserRoleLink {
+  userId String @db.Uuid
+  roleId String @db.Uuid
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  @@id([userId, roleId])
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  refreshHash  String
+  refreshSelector String? @unique
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
+model StoreMember {
+  userId    String   @db.Uuid
+  storeId   String   @db.Uuid
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, storeId])
+  @@index([storeId])
+}

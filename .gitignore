@@ -1,0 +1,5 @@
+.env
+FE/.next
+FE/node_modules
+BE/dist
+BE/node_modules

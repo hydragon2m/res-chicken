@@ -1,0 +1,14 @@
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?w=500&auto=format' WHERE "name" LIKE '%truyền thống%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1569058242253-92a9c755a0ec?w=500&auto=format' WHERE "name" LIKE '%Gà rán cay%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1585238342024-78d387f4a707?w=500&auto=format' WHERE "name" LIKE '%Hàn Quốc%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1567620832903-9fc6debc209f?w=500&auto=format' WHERE "name" LIKE '%bơ tỏi%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500&auto=format' WHERE "name" LIKE '%Burger%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1551183053-bf91a1d81141?w=500&auto=format' WHERE "name" LIKE '%Mì Ý%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&auto=format' WHERE "name" LIKE '%Cơm gà%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1594212699903-ec8a3eca50f5?w=500&auto=format' WHERE "name" LIKE '%Combo%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=500&auto=format' WHERE "name" LIKE '%Khoai tây%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1562967914-608f82629710?w=500&auto=format' WHERE "name" LIKE '%Popcorn%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=500&auto=format' WHERE "name" LIKE '%Trà đào%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1554866585-cd94860890b7?w=500&auto=format' WHERE "name" LIKE '%Coca-Cola%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=500&auto=format' WHERE "name" LIKE '%hạt chia%';
+UPDATE "Product" SET "imageUrl" = 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=500&auto=format' WHERE "imageUrl" IS NULL;
