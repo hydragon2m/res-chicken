@@ -442,41 +442,97 @@ export class ReportsService {
     };
   }
 
-  async dashboardMetrics(actor: AuthenticatedUser, storeId: string) {
+  async dashboardMetrics(actor: AuthenticatedUser, storeId: string, range = '30d') {
     this.assertStore(actor, storeId);
 
     const now = new Date();
-    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+    let currentStart: Date;
+    const currentEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
-    const [currentOrders, prevOrders, allPayments, store, topItems] = await Promise.all([
-      this.prisma.order.findMany({
-        where: {
-          storeId,
-          status: OrderStatus.PAID,
-          createdAt: { gte: currentMonthStart },
-        },
-      }),
-      this.prisma.order.findMany({
-        where: {
-          storeId,
-          status: OrderStatus.PAID,
-          createdAt: { gte: prevMonthStart, lte: prevMonthEnd },
-        },
-      }),
-      this.prisma.payment.findMany({
-        where: {
-          storeId,
-          status: PaymentStatus.CAPTURED,
-        },
-      }),
-      this.prisma.store.findUnique({
-        where: { id: storeId },
-        select: { name: true },
-      }),
-      this.topSelling(actor, storeId, undefined, undefined, 5),
-    ]);
+    if (range === 'today') {
+      currentStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    } else if (range === '7d') {
+      currentStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (range === 'month') {
+      currentStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    } else {
+      // default: 30d
+      currentStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
+
+    const durationMs = Math.max(24 * 60 * 60 * 1000, currentEnd.getTime() - currentStart.getTime());
+    const prevStart = new Date(currentStart.getTime() - durationMs);
+    const prevEnd = new Date(currentStart.getTime() - 1);
+
+    // Date for 6-month historical monthly trend
+    const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+
+    const [currentOrders, prevOrders, allPayments, store, products, consumptionEntries, sixMonthsOrders] =
+      await Promise.all([
+        this.prisma.order.findMany({
+          where: {
+            storeId,
+            status: OrderStatus.PAID,
+            createdAt: { gte: currentStart, lte: currentEnd },
+          },
+          include: {
+            items: true,
+            payments: true,
+          },
+        }),
+        this.prisma.order.findMany({
+          where: {
+            storeId,
+            status: OrderStatus.PAID,
+            createdAt: { gte: prevStart, lte: prevEnd },
+          },
+          select: { totalAmount: true },
+        }),
+        this.prisma.payment.findMany({
+          where: {
+            storeId,
+            status: PaymentStatus.CAPTURED,
+            capturedAt: { gte: currentStart, lte: currentEnd },
+          },
+        }),
+        this.prisma.store.findUnique({
+          where: { id: storeId },
+          select: { name: true },
+        }),
+        this.prisma.product.findMany({
+          where: { storeId },
+          select: {
+            id: true,
+            name: true,
+            category: { select: { id: true, name: true } },
+          },
+        }),
+        this.prisma.inventoryLedgerEntry.findMany({
+          where: {
+            storeId,
+            sourceType: { in: ['FULFILLMENT_TICKET', 'FULFILLMENT_TICKET_REFUND'] },
+            occurredAt: { gte: currentStart, lte: currentEnd },
+          },
+          include: { lot: { select: { unitCost: true } } },
+        }),
+        this.prisma.order.findMany({
+          where: {
+            storeId,
+            status: OrderStatus.PAID,
+            createdAt: { gte: sixMonthsAgo, lte: currentEnd },
+          },
+          select: {
+            createdAt: true,
+            source: true,
+            totalAmount: true,
+          },
+        }),
+      ]);
+
+    const productCategoryMap = new Map<string, string>();
+    for (const p of products) {
+      productCategoryMap.set(p.id, p.category?.name || 'Khác');
+    }
 
     const currentRevenue = currentOrders.reduce((sum, o) => sum + o.totalAmount, 0);
     const prevRevenue = prevOrders.reduce((sum, o) => sum + o.totalAmount, 0);
@@ -497,54 +553,187 @@ export class ReportsService {
           : 0;
 
     const averageOrderValue = currentUsers > 0 ? Math.round(currentRevenue / currentUsers) : 0;
+    const prevAov = prevUsers > 0 ? Math.round(prevRevenue / prevUsers) : 0;
+    const aovGrowth =
+      prevAov > 0
+        ? Number((((averageOrderValue - prevAov) / prevAov) * 100).toFixed(1))
+        : averageOrderValue > 0
+          ? 100
+          : 0;
 
-    // Daily Sales Trend for past 14 days
-    const salesTrend = [];
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-      const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-      const dayOrders = await this.prisma.order.findMany({
-        where: {
-          storeId,
-          status: OrderStatus.PAID,
-          createdAt: { gte: dayStart, lte: dayEnd },
-        },
-      });
-      const dayRevenue = dayOrders.reduce((sum, o) => sum + o.totalAmount, 0);
-      salesTrend.push({
-        date: `${d.getDate()}/${d.getMonth() + 1}`,
-        revenue: dayRevenue,
-        ordersCount: dayOrders.length,
-      });
+    // 1. COGS & Profitability
+    const totalCogs = Math.max(
+      0,
+      consumptionEntries.reduce((sum, entry) => {
+        const unitCost = entry.lot?.unitCost ?? 0;
+        return sum + -entry.quantity * unitCost;
+      }, 0),
+    );
+    const grossProfit = currentRevenue - totalCogs;
+    const grossMarginPercent =
+      currentRevenue > 0 ? Number(((grossProfit / currentRevenue) * 100).toFixed(1)) : 0;
+
+    // 2. Hourly Sales & Peak Hour Analysis (24h)
+    const hourlyBuckets = Array.from({ length: 24 }, (_, h) => ({
+      hour: `${h.toString().padStart(2, '0')}:00`,
+      hourNum: h,
+      orders: 0,
+      revenue: 0,
+    }));
+
+    for (const order of currentOrders) {
+      const h = new Date(order.createdAt).getHours();
+      if (h >= 0 && h < 24) {
+        hourlyBuckets[h].orders += 1;
+        hourlyBuckets[h].revenue += order.totalAmount;
+      }
     }
 
-    // Monthly Bar data (past 6 months)
+    let peakHourBucket = hourlyBuckets[12];
+    for (const b of hourlyBuckets) {
+      if (b.revenue > peakHourBucket.revenue) {
+        peakHourBucket = b;
+      }
+    }
+    const peakHour = `${peakHourBucket.hour} - ${(peakHourBucket.hourNum + 1).toString().padStart(2, '0')}:00`;
+
+    // Dayparts (Sáng, Trưa, Chiều, Tối, Đêm)
+    const dayparts = [
+      { name: 'Sáng (06h - 11h)', orders: 0, revenue: 0, percent: 0 },
+      { name: 'Trưa (11h - 14h)', orders: 0, revenue: 0, percent: 0 },
+      { name: 'Chiều (14h - 17h)', orders: 0, revenue: 0, percent: 0 },
+      { name: 'Tối (17h - 21h)', orders: 0, revenue: 0, percent: 0 },
+      { name: 'Đêm (21h - 06h)', orders: 0, revenue: 0, percent: 0 },
+    ];
+    for (const b of hourlyBuckets) {
+      if (b.hourNum >= 6 && b.hourNum < 11) {
+        dayparts[0].orders += b.orders;
+        dayparts[0].revenue += b.revenue;
+      } else if (b.hourNum >= 11 && b.hourNum < 14) {
+        dayparts[1].orders += b.orders;
+        dayparts[1].revenue += b.revenue;
+      } else if (b.hourNum >= 14 && b.hourNum < 17) {
+        dayparts[2].orders += b.orders;
+        dayparts[2].revenue += b.revenue;
+      } else if (b.hourNum >= 17 && b.hourNum < 21) {
+        dayparts[3].orders += b.orders;
+        dayparts[3].revenue += b.revenue;
+      } else {
+        dayparts[4].orders += b.orders;
+        dayparts[4].revenue += b.revenue;
+      }
+    }
+    for (const dp of dayparts) {
+      dp.percent = currentRevenue > 0 ? Number(((dp.revenue / currentRevenue) * 100).toFixed(1)) : 0;
+    }
+
+    // 3. Category Breakdown (Market Product Mix)
+    const categoryAgg: Record<string, { category: string; quantity: number; revenue: number }> = {};
+    for (const order of currentOrders) {
+      for (const item of order.items) {
+        const catName = productCategoryMap.get(item.productId) || 'Món khác';
+        if (!categoryAgg[catName]) {
+          categoryAgg[catName] = { category: catName, quantity: 0, revenue: 0 };
+        }
+        categoryAgg[catName].quantity += item.quantity;
+        categoryAgg[catName].revenue += item.lineTotal;
+      }
+    }
+    const categoryDistribution = Object.values(categoryAgg)
+      .map((c) => ({
+        ...c,
+        percent: currentRevenue > 0 ? Number(((c.revenue / currentRevenue) * 100).toFixed(1)) : 0,
+      }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    // 4. Channel Comparison: POS vs TABLE_QR
+    const posOrders = currentOrders.filter((o) => o.source === 'POS');
+    const qrOrders = currentOrders.filter((o) => o.source !== 'POS');
+    const posRevenue = posOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const qrRevenue = qrOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+
+    const channelComparison = {
+      pos: {
+        ordersCount: posOrders.length,
+        revenue: posRevenue,
+        aov: posOrders.length > 0 ? Math.round(posRevenue / posOrders.length) : 0,
+        sharePercent: currentRevenue > 0 ? Number(((posRevenue / currentRevenue) * 100).toFixed(1)) : 0,
+      },
+      tableQr: {
+        ordersCount: qrOrders.length,
+        revenue: qrRevenue,
+        aov: qrOrders.length > 0 ? Math.round(qrRevenue / qrOrders.length) : 0,
+        sharePercent: currentRevenue > 0 ? Number(((qrRevenue / currentRevenue) * 100).toFixed(1)) : 0,
+      },
+    };
+
+    // 5. Order Ticket Size Brackets (Thị phần mức chi tiêu)
+    const orderBrackets = [
+      { key: '<60k', label: 'Dưới 60k (Ăn vặt / Đồ uống)', count: 0, revenue: 0, percent: 0 },
+      { key: '60k-120k', label: '60k - 120k (Suất đơn)', count: 0, revenue: 0, percent: 0 },
+      { key: '120k-250k', label: '120k - 250k (Combo 2 người)', count: 0, revenue: 0, percent: 0 },
+      { key: '>250k', label: 'Trên 250k (Nhóm bạn / Gia đình)', count: 0, revenue: 0, percent: 0 },
+    ];
+    for (const o of currentOrders) {
+      if (o.totalAmount < 60000) {
+        orderBrackets[0].count += 1;
+        orderBrackets[0].revenue += o.totalAmount;
+      } else if (o.totalAmount <= 120000) {
+        orderBrackets[1].count += 1;
+        orderBrackets[1].revenue += o.totalAmount;
+      } else if (o.totalAmount <= 250000) {
+        orderBrackets[2].count += 1;
+        orderBrackets[2].revenue += o.totalAmount;
+      } else {
+        orderBrackets[3].count += 1;
+        orderBrackets[3].revenue += o.totalAmount;
+      }
+    }
+    for (const ob of orderBrackets) {
+      ob.percent = currentUsers > 0 ? Number(((ob.count / currentUsers) * 100).toFixed(1)) : 0;
+    }
+
+    // 6. Daily Sales Trend across the selected range
+    const daysCount = Math.min(30, Math.max(1, Math.ceil(durationMs / (24 * 60 * 60 * 1000))));
+    const salesTrendMap: Record<string, { date: string; revenue: number; ordersCount: number }> = {};
+    for (let i = daysCount - 1; i >= 0; i--) {
+      const d = new Date(currentEnd.getTime() - i * 24 * 60 * 60 * 1000);
+      const key = `${d.getDate()}/${d.getMonth() + 1}`;
+      salesTrendMap[key] = { date: key, revenue: 0, ordersCount: 0 };
+    }
+    for (const o of currentOrders) {
+      const d = new Date(o.createdAt);
+      const key = `${d.getDate()}/${d.getMonth() + 1}`;
+      if (salesTrendMap[key]) {
+        salesTrendMap[key].revenue += o.totalAmount;
+        salesTrendMap[key].ordersCount += 1;
+      }
+    }
+    const salesTrend = Object.values(salesTrendMap);
+
+    // 7. Monthly Bar data (past 6 months)
     const monthNames = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
+      'Th 1',
+      'Th 2',
+      'Th 3',
+      'Th 4',
+      'Th 5',
+      'Th 6',
+      'Th 7',
+      'Th 8',
+      'Th 9',
+      'Th 10',
+      'Th 11',
+      'Th 12',
     ];
     const revenueBarData = [];
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const mStart = new Date(d.getFullYear(), d.getMonth(), 1);
       const mEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999);
-      const mOrders = await this.prisma.order.findMany({
-        where: {
-          storeId,
-          status: OrderStatus.PAID,
-          createdAt: { gte: mStart, lte: mEnd },
-        },
+      const mOrders = sixMonthsOrders.filter((o) => {
+        const t = new Date(o.createdAt).getTime();
+        return t >= mStart.getTime() && t <= mEnd.getTime();
       });
       const desktop = mOrders
         .filter((o) => o.source === 'POS')
@@ -560,7 +749,7 @@ export class ReportsService {
       });
     }
 
-    // Payment source breakdown
+    // 8. Payment source breakdown
     const totalPaymentsAmount = allPayments.reduce((sum, p) => sum + p.amount, 0);
     const vietQrAmount = allPayments
       .filter((p) => p.method === PaymentMethod.QR_VIETQR)
@@ -576,29 +765,73 @@ export class ReportsService {
             {
               name: 'VietQR / Chuyển khoản',
               value: Math.round((vietQrAmount / totalPaymentsAmount) * 100),
+              amount: vietQrAmount,
               color: '#f59e0b',
             },
             {
               name: 'Tiền mặt tại quầy',
               value: Math.round((cashAmount / totalPaymentsAmount) * 100),
+              amount: cashAmount,
               color: '#334155',
             },
             {
-              name: 'Thẻ POS / Ví điện tử',
+              name: 'Thẻ POS / Khác',
               value: Math.round((otherAmount / totalPaymentsAmount) * 100),
+              amount: otherAmount,
               color: '#fbbf24',
             },
           ]
         : [];
 
+    // 9. Top 8 Selling Items with Market Contribution Rate
+    const itemAgg: Record<string, { productId: string; name: string; quantity: number; revenue: number }> = {};
+    for (const order of currentOrders) {
+      for (const item of order.items) {
+        const key = `${item.productId}:${item.variantName}`;
+        if (!itemAgg[key]) {
+          itemAgg[key] = {
+            productId: item.productId,
+            name: `${item.productName} (${item.variantName})`,
+            quantity: 0,
+            revenue: 0,
+          };
+        }
+        itemAgg[key].quantity += item.quantity;
+        itemAgg[key].revenue += item.lineTotal;
+      }
+    }
+    const topItems = Object.values(itemAgg)
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 8)
+      .map((it) => ({
+        ...it,
+        contributionPercent:
+          currentRevenue > 0 ? Number(((it.revenue / currentRevenue) * 100).toFixed(1)) : 0,
+      }));
+
     return {
       storeName: store?.name ?? 'Chick Res',
+      range,
       currentRevenue,
       prevRevenue,
       revenueGrowth,
       currentUsers,
+      prevUsers,
       userGrowth,
       averageOrderValue,
+      aovGrowth,
+      profitability: {
+        revenue: currentRevenue,
+        totalCogs,
+        grossProfit,
+        grossMarginPercent,
+      },
+      peakHour,
+      hourlyDistribution: hourlyBuckets.filter((h) => h.hourNum >= 7 && h.hourNum <= 22),
+      dayparts,
+      categoryDistribution,
+      channelComparison,
+      orderBrackets,
       salesTrend,
       revenueBarData,
       paymentSourceData,

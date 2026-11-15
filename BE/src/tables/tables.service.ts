@@ -198,6 +198,41 @@ export class TablesService {
     if (!table) throw new NotFoundException('Bàn không tồn tại.');
     this.assertStore(actor, table.storeId);
 
+    // Guard 1: Do not allow changing to AVAILABLE or RESERVED if the table has unpaid orders
+    if (status === TableStatus.AVAILABLE || status === TableStatus.RESERVED) {
+      const unpaidOrders = await this.prisma.order.findMany({
+        where: {
+          tableId: id,
+          status: OrderStatus.AWAITING_PAYMENT,
+        },
+        select: { id: true, totalAmount: true },
+      });
+
+      if (unpaidOrders.length > 0) {
+        const totalUnpaid = unpaidOrders.reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
+        const statusLabel = status === TableStatus.AVAILABLE ? 'Trống' : 'Đã đặt trước';
+        throw new BadRequestException(
+          `Không thể chuyển bàn ${table.code} sang trạng thái '${statusLabel}'. Bàn đang có ${unpaidOrders.length} hóa đơn chưa thanh toán (tổng ${totalUnpaid.toLocaleString('vi-VN')} đ). Vui lòng hoàn tất thanh toán hoặc hủy đơn trước!`,
+        );
+      }
+    }
+
+    // Guard 2: Do not allow setting to AVAILABLE if there is an active seated reservation
+    if (status === TableStatus.AVAILABLE) {
+      const activeSeated = await this.prisma.reservation.findFirst({
+        where: {
+          tableId: id,
+          status: ReservationStatus.SEATED,
+        },
+        select: { id: true, customerName: true },
+      });
+      if (activeSeated) {
+        throw new BadRequestException(
+          `Không thể chuyển bàn ${table.code} sang 'Trống' vì khách đặt bàn '${activeSeated.customerName}' đang ngồi dùng bữa (SEATED). Vui lòng hoàn tất lượt đặt bàn trước!`,
+        );
+      }
+    }
+
     const updated = await this.prisma.diningTable.update({
       where: { id },
       data: { status },
@@ -390,6 +425,30 @@ export class TablesService {
 
     const oldTableId = res.tableId;
     const targetTableId = dto.tableId ?? res.tableId;
+
+    // Guard: Prevent completing (or cancelling while seated) if the table still has unpaid orders
+    if (
+      (dto.status === ReservationStatus.COMPLETED ||
+        (dto.status === ReservationStatus.CANCELLED && res.status === ReservationStatus.SEATED)) &&
+      targetTableId
+    ) {
+      const unpaidOrders = await this.prisma.order.findMany({
+        where: {
+          tableId: targetTableId,
+          status: OrderStatus.AWAITING_PAYMENT,
+        },
+        select: { id: true, totalAmount: true },
+      });
+
+      if (unpaidOrders.length > 0) {
+        const totalUnpaid = unpaidOrders.reduce((sum, o) => sum + Number(o.totalAmount || 0), 0);
+        const actionLabel =
+          dto.status === ReservationStatus.COMPLETED ? 'hoàn tất' : 'hủy lượt đặt bàn đang ngồi';
+        throw new BadRequestException(
+          `Không thể ${actionLabel} của khách '${res.customerName}'. Bàn đang có ${unpaidOrders.length} hóa đơn chưa thanh toán (tổng ${totalUnpaid.toLocaleString('vi-VN')} đ). Vui lòng thu tiền hoặc xử lý hóa đơn trước khi đóng bàn!`,
+        );
+      }
+    }
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const dateKey = res.reservationTime.toISOString().slice(0, 10);

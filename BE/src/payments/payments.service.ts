@@ -298,7 +298,10 @@ export class PaymentsService {
           },
         });
         await this.fulfillment.voidForRefund(tx, payment.orderId, actor.id, dto.note);
-        if (payment.method === PaymentMethod.CASH) {
+        const isCashRefund =
+          dto.refundMethod === PaymentMethod.CASH ||
+          (!dto.refundMethod && payment.method === PaymentMethod.CASH);
+        if (isCashRefund) {
           const shift = await this.shifts.openForPayment(tx, payment.storeId);
           await tx.cashMovement.create({
             data: {

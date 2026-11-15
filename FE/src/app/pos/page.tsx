@@ -20,11 +20,12 @@ import {
   CalendarDays,
   Users,
   UtensilsCrossed,
+  RotateCcw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { AccessDenied } from '../../components/access-denied';
 import { ApiError, apiRequest, getActor, type Actor } from '../../lib/auth';
-import { printOrderReceipt } from '../../lib/print-receipt';
+import { printOrderReceipt, printRefundReceipt } from '../../lib/print-receipt';
 import { useActiveStore } from '../../lib/store-context';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -96,6 +97,7 @@ type CartLine = {
 };
 type Order = {
   id: string;
+  source?: string;
   status: string;
   subtotalAmount?: number;
   discountAmount?: number;
@@ -103,6 +105,9 @@ type Order = {
   taxAmount?: number;
   totalAmount: number;
   createdAt?: string;
+  updatedAt?: string;
+  table?: { id: string; code: string; name?: string } | null;
+  diningTable?: { id: string; code: string; name?: string } | null;
   items: {
     productName: string;
     variantName: string;
@@ -110,7 +115,14 @@ type Order = {
     lineTotal: number;
     optionsSnapshot: Option[];
   }[];
-  payments: { id: string; method: string; amount: number; status: string }[];
+  payments: {
+    id: string;
+    method: string;
+    amount: number;
+    status: string;
+    refundedAt?: string | null;
+    refundNote?: string | null;
+  }[];
 };
 
 type StoreSettings = {
@@ -181,6 +193,8 @@ export default function PosPage() {
   const [manageShiftDialogOpen, setManageShiftDialogOpen] = useState(false);
   const [cancelOrderDialogOpen, setCancelOrderDialogOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [posRefundDialogOpen, setPosRefundDialogOpen] = useState(false);
+  const [posRefundReason, setPosRefundReason] = useState('');
   const [cashPayDialogOpen, setCashPayDialogOpen] = useState(false);
   const [receivedCash, setReceivedCash] = useState<number>(0);
   const [vietQrPayment, setVietQrPayment] = useState<
@@ -195,6 +209,22 @@ export default function PosPage() {
   const [posOrdersTableId, setPosOrdersTableId] = useState<string | null>(null);
   const posOrdersTable = tables.find((t) => t.id === posOrdersTableId) ?? null;
   const [posTableTab, setPosTableTab] = useState<'tables' | 'reservations' | 'new'>('tables');
+  const [posTableFilter, setPosTableFilter] = useState<'ALL' | 'AVAILABLE' | 'OCCUPIED' | 'RESERVED'>('ALL');
+
+  const filteredPosTables = useMemo(() => {
+    if (posTableFilter === 'ALL') return tables;
+    return tables.filter((t) => t.status === posTableFilter);
+  }, [tables, posTableFilter]);
+
+  const posTableCounts = useMemo(
+    () => ({
+      all: tables.length,
+      available: tables.filter((t) => t.status === 'AVAILABLE').length,
+      occupied: tables.filter((t) => t.status === 'OCCUPIED').length,
+      reserved: tables.filter((t) => t.status === 'RESERVED').length,
+    }),
+    [tables],
+  );
   const [newResName, setNewResName] = useState('');
   const [newResPhone, setNewResPhone] = useState('');
   const [newResGuests, setNewResGuests] = useState(4);
@@ -487,8 +517,23 @@ export default function PosPage() {
       toast.success(`Đã tạo đơn #${next.id.slice(0, 8).toUpperCase()}`);
     });
 
-  const handlePosTableStatus = (tableId: string, status: PosTable['status']) =>
-    run(async () => {
+  const handlePosTableStatus = (tableId: string, status: PosTable['status']) => {
+    // Client-side guard: Prevent changing to AVAILABLE or RESERVED if table has unpaid orders
+    if (status === 'AVAILABLE' || status === 'RESERVED') {
+      const targetTable = tables.find((t: PosTable) => t.id === tableId);
+      const unpaidOrders = (targetTable?.orders || []).filter(
+        (o) => o.status === 'AWAITING_PAYMENT',
+      );
+      if (unpaidOrders.length > 0) {
+        toast.error(
+          `Bàn ${targetTable?.code ?? ''} đang có ${unpaidOrders.length} hóa đơn chưa thanh toán. Vui lòng thanh toán hoặc hủy đơn trước!`,
+        );
+        setPosOrdersTableId(tableId);
+        return;
+      }
+    }
+
+    return run(async () => {
       await apiRequest(`/tables/${tableId}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status }),
@@ -496,13 +541,29 @@ export default function PosPage() {
       if (storeId) await load(storeId);
       toast.success('Đã cập nhật trạng thái bàn ăn');
     });
+  };
 
   const handlePosReservationStatus = (
     res: PosReservation,
     status: PosReservation['status'],
     selectForOrder = false,
-  ) =>
-    run(async () => {
+  ) => {
+    // Client-side guard: Prevent completing (or cancelling while seated) if table has unpaid orders
+    if ((status === 'COMPLETED' || status === 'CANCELLED') && res.tableId) {
+      const targetTable = tables.find((t: PosTable) => t.id === res.tableId);
+      const unpaidOrders = (targetTable?.orders || []).filter(
+        (o) => o.status === 'AWAITING_PAYMENT',
+      );
+      if (unpaidOrders.length > 0) {
+        toast.error(
+          `Bàn ${targetTable?.code ?? ''} đang có ${unpaidOrders.length} hóa đơn chưa thanh toán. Vui lòng thu tiền trước khi đóng bàn!`,
+        );
+        setPosOrdersTableId(res.tableId);
+        return;
+      }
+    }
+
+    return run(async () => {
       await apiRequest(`/reservations/${res.id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({ status, tableId: res.tableId || undefined }),
@@ -515,9 +576,14 @@ export default function PosPage() {
       toast.success(
         selectForOrder
           ? `Đã nhận bàn cho khách ${res.customerName} và chọn bàn vào giỏ POS!`
-          : 'Đã cập nhật lịch đặt bàn',
+          : status === 'SEATED'
+            ? 'Đã nhận khách vào bàn'
+            : status === 'COMPLETED'
+              ? 'Đã hoàn tất lịch đặt bàn'
+              : 'Đã cập nhật trạng thái đặt bàn',
       );
     });
+  };
 
   const handlePosCreateReservation = (e: React.FormEvent) => {
     e.preventDefault();
@@ -601,14 +667,44 @@ export default function PosPage() {
     run(async () => {
       const payment = order?.payments[0];
       if (!payment) return;
+      if (!posRefundReason.trim()) {
+        toast.warning('Vui lòng nhập lý do hoàn tiền.');
+        return;
+      }
       await apiRequest<{ order: Order }>(`/payments/${payment.id}/refund`, {
         method: 'POST',
         headers: { 'Idempotency-Key': key() },
-        body: JSON.stringify({ note: `POS refund for ${order?.id}` }),
+        body: JSON.stringify({
+          note: posRefundReason.trim(),
+          refundMethod: 'CASH',
+        }),
       });
-      setOrder(await apiRequest<Order>(`/orders/${order.id}`));
+      const updated = await apiRequest<Order>(`/orders/${order.id}`);
+      setOrder(updated);
       if (storeId) await load(storeId);
-      toast.success('Đã hoàn tiền thành công.');
+      setPosRefundDialogOpen(false);
+      toast.success(`Đã hoàn trả ${money.format(order.totalAmount)} tiền mặt cho khách.`);
+
+      // Tự động in phiếu hoàn tiền mặt
+      printRefundReceipt({
+        id: order.id,
+        orderCreatedAt: order.createdAt,
+        refundedAt: new Date().toISOString(),
+        tableCode: (order.table ?? order.diningTable)?.code ?? null,
+        source: order.source,
+        totalAmount: order.totalAmount,
+        refundMethod: 'Tiền mặt (Chi từ ca POS)',
+        refundReason: posRefundReason.trim(),
+        storeName: storeSettings?.name ?? currentStore?.name,
+        storeAddress: storeSettings?.address,
+        storePhone: storeSettings?.phone,
+        items: order.items.map((it) => ({
+          productName: it.productName,
+          variantName: it.variantName,
+          quantity: it.quantity,
+          lineTotal: it.lineTotal,
+        })),
+      });
     });
 
   if (!actor || storeLoading || !storeId) {
@@ -1256,12 +1352,15 @@ export default function PosPage() {
                 </Button>
                 {can('payments.refund') && (
                   <Button
-                    onClick={() => void refund()}
-                    variant="ghost"
+                    onClick={() => {
+                      setPosRefundReason('');
+                      setPosRefundDialogOpen(true);
+                    }}
+                    variant="outline"
                     size="xs"
-                    className="w-full text-xs text-slate-500 hover:text-rose-600"
+                    className="w-full text-xs text-rose-600 border-rose-200 hover:bg-rose-50 font-bold"
                   >
-                    Hoàn tiền cho đơn này
+                    Huỷ đơn & Hoàn tiền mặt
                   </Button>
                 )}
               </div>
@@ -1276,6 +1375,37 @@ export default function PosPage() {
                 {order.status === 'REFUNDED' ? 'Đơn đã hoàn tiền' : 'Đơn đã được huỷ'}
               </h3>
               <p className="text-xs text-slate-500">Mã đơn #{order.id.slice(0, 8).toUpperCase()}</p>
+              {order.status === 'REFUNDED' && (
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={() => {
+                    printRefundReceipt({
+                      id: order.id,
+                      orderCreatedAt: order.createdAt,
+                      refundedAt: order.payments[0]?.refundedAt ?? order.updatedAt,
+                      tableCode: (order.table ?? order.diningTable)?.code ?? null,
+                      source: order.source,
+                      totalAmount: order.totalAmount,
+                      refundMethod: 'Tiền mặt (Chi từ ca POS)',
+                      refundReason: order.payments[0]?.refundNote ?? 'Hoàn tiền huỷ đơn',
+                      storeName: storeSettings?.name ?? currentStore?.name,
+                      storeAddress: storeSettings?.address,
+                      storePhone: storeSettings?.phone,
+                      items: order.items.map((it) => ({
+                        productName: it.productName,
+                        variantName: it.variantName,
+                        quantity: it.quantity,
+                        lineTotal: it.lineTotal,
+                      })),
+                    });
+                  }}
+                  className="text-xs text-slate-700 border-slate-200"
+                >
+                  <Printer className="size-3.5 mr-1" />
+                  In lại phiếu hoàn tiền
+                </Button>
+              )}
               <Button
                 onClick={() => {
                   setOrder(null);
@@ -1495,6 +1625,56 @@ export default function PosPage() {
         </DialogContent>
       </Dialog>
 
+      {/* POS Refund Cash Dialog */}
+      <Dialog open={posRefundDialogOpen} onOpenChange={setPosRefundDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-rose-600 flex items-center gap-1.5">
+              <RotateCcw className="size-4" />
+              <span>Huỷ đơn & Hoàn tiền mặt</span>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Chi tiền mặt từ két ca thu ngân để hoàn lại cho khách hàng và huỷ đơn.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 space-y-3">
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
+              <span className="text-[11px] font-semibold text-amber-800 uppercase block">
+                Tiền mặt cần trả lại khách
+              </span>
+              <span className="text-xl font-black font-mono text-amber-900">
+                {money.format(order?.totalAmount ?? 0)}
+              </span>
+              <p className="text-[10px] text-amber-700 mt-0.5">
+                Khoản chi này sẽ ghi nhận vào ca thu ngân hiện tại.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-slate-700">Lý do huỷ & hoàn tiền *</label>
+              <Input
+                placeholder="VD: Khách đổi ý, hết món..."
+                value={posRefundReason}
+                onChange={(e) => setPosRefundReason(e.target.value)}
+                className="text-xs"
+              />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" size="sm" onClick={() => setPosRefundDialogOpen(false)}>
+              Bỏ qua
+            </Button>
+            <Button
+              size="sm"
+              disabled={busy || !posRefundReason.trim()}
+              onClick={() => void refund()}
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold"
+            >
+              Xác nhận hoàn tiền mặt
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Cash Calculator Dialog */}
       <Dialog open={cashPayDialogOpen} onOpenChange={setCashPayDialogOpen}>
         <DialogContent className="max-w-sm">
@@ -1618,7 +1798,7 @@ export default function PosPage() {
 
       {/* Dialog: Quản lý Sơ đồ Bàn & Đặt bàn ngay tại POS */}
       <Dialog open={posTableDialogOpen} onOpenChange={setPosTableDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+        <DialogContent className="w-[94vw] sm:max-w-4xl md:max-w-5xl lg:max-w-6xl max-h-[88vh] flex flex-col p-4 sm:p-6 overflow-hidden">
           <DialogHeader>
             <DialogTitle className="text-base font-bold flex items-center gap-2">
               <UtensilsCrossed className="size-5 text-amber-600" />
@@ -1636,7 +1816,7 @@ export default function PosPage() {
               onClick={() => setPosTableTab('tables')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                 posTableTab === 'tables'
-                  ? 'bg-amber-500 text-slate-950'
+                  ? 'bg-amber-500 text-slate-950 shadow-2xs'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
@@ -1647,7 +1827,7 @@ export default function PosPage() {
               onClick={() => setPosTableTab('reservations')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                 posTableTab === 'reservations'
-                  ? 'bg-amber-500 text-slate-950'
+                  ? 'bg-amber-500 text-slate-950 shadow-2xs'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
@@ -1658,7 +1838,7 @@ export default function PosPage() {
               onClick={() => setPosTableTab('new')}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
                 posTableTab === 'new'
-                  ? 'bg-amber-500 text-slate-950'
+                  ? 'bg-amber-500 text-slate-950 shadow-2xs'
                   : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
@@ -1666,7 +1846,7 @@ export default function PosPage() {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto py-2 space-y-3">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden py-2 space-y-3">
             {posTableTab === 'tables' && posOrdersTable && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -1682,9 +1862,9 @@ export default function PosPage() {
                     size="xs"
                     variant="outline"
                     onClick={() => setPosOrdersTableId(null)}
-                    className="text-xs cursor-pointer"
+                    className="text-xs cursor-pointer font-bold"
                   >
-                    ← Danh sách bàn
+                    ← Trở lại danh sách bàn
                   </Button>
                 </div>
                 <TableOrdersList orders={posOrdersTable.orders ?? []} />
@@ -1692,88 +1872,178 @@ export default function PosPage() {
             )}
 
             {posTableTab === 'tables' && !posOrdersTable && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {tables.map((t) => {
-                  const isSelected = selectedTableId === t.id;
-                  return (
-                    <div
-                      key={t.id}
-                      className={`p-3 rounded-xl border transition-all space-y-2.5 ${
-                        isSelected
-                          ? 'border-orange-500 bg-orange-50/60 ring-2 ring-orange-500/20'
-                          : 'border-slate-200 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-extrabold text-slate-900">
-                            {t.code} • {t.name}
-                          </p>
-                          <p className="text-[11px] text-slate-500 flex items-center gap-1">
-                            <Users className="size-3" /> Tối đa {t.capacity} khách
-                          </p>
-                        </div>
-                        <Badge
-                          className={`text-[10px] ${
-                            t.status === 'AVAILABLE'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : t.status === 'RESERVED'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-rose-100 text-rose-800'
+              <div className="space-y-3">
+                {/* Status Filter Tabs */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {(
+                      [
+                        ['ALL', `Tất cả (${posTableCounts.all})`],
+                        ['AVAILABLE', `🟢 Bàn trống (${posTableCounts.available})`],
+                        ['OCCUPIED', `🔴 Có khách (${posTableCounts.occupied})`],
+                        ['RESERVED', `🟡 Đã đặt (${posTableCounts.reserved})`],
+                      ] as const
+                    ).map(([filterKey, label]) => (
+                      <button
+                        key={filterKey}
+                        type="button"
+                        onClick={() => setPosTableFilter(filterKey)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          posTableFilter === filterKey
+                            ? 'bg-slate-900 text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                    Chọn bàn để gắn vào đơn hàng POS
+                  </span>
+                </div>
+
+                {filteredPosTables.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 text-xs">
+                    Không tìm thấy bàn nào theo bộ lọc đã chọn.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                    {filteredPosTables.map((t) => {
+                      const isSelected = selectedTableId === t.id;
+                      return (
+                        <div
+                          key={t.id}
+                          className={`rounded-2xl border p-3 transition-all flex flex-col justify-between gap-2.5 shadow-2xs min-w-0 ${
+                            isSelected
+                              ? 'border-orange-500 bg-orange-50/70 ring-2 ring-orange-500/25'
+                              : t.status === 'OCCUPIED'
+                                ? 'border-rose-200 bg-rose-50/30 hover:border-rose-400'
+                                : t.status === 'RESERVED'
+                                  ? 'border-amber-200 bg-amber-50/30 hover:border-amber-400'
+                                  : 'border-slate-200 bg-white hover:border-emerald-400'
                           }`}
                         >
-                          {t.status === 'AVAILABLE'
-                            ? 'Trống'
-                            : t.status === 'RESERVED'
-                              ? 'Đã đặt'
-                              : 'Có khách'}
-                        </Badge>
-                      </div>
+                          <div className="space-y-2 min-w-0">
+                            {/* Card Header: Table code, name, capacity, status badge */}
+                            <div className="flex items-start justify-between gap-1.5 min-w-0">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-baseline gap-1.5 flex-wrap">
+                                  <span className="text-base font-black font-mono text-slate-900 tracking-tight shrink-0">
+                                    {t.code}
+                                  </span>
+                                  <span
+                                    className="text-xs font-semibold text-slate-600 truncate max-w-[120px]"
+                                    title={t.name}
+                                  >
+                                    {t.name}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                  <Users className="size-3 text-slate-400 shrink-0" />
+                                  <span>{t.capacity} chỗ</span>
+                                </p>
+                              </div>
 
-                      <TableOrdersSummary
-                        orders={t.orders}
-                        onOpen={() => setPosOrdersTableId(t.id)}
-                      />
+                              <Badge
+                                className={`text-[10px] shrink-0 font-bold px-2 py-0.5 border ${
+                                  t.status === 'AVAILABLE'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : t.status === 'RESERVED'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                      : 'bg-rose-50 text-rose-800 border-rose-200'
+                                }`}
+                              >
+                                {t.status === 'AVAILABLE'
+                                  ? 'Trống'
+                                  : t.status === 'RESERVED'
+                                    ? 'Đã đặt'
+                                    : 'Có khách'}
+                              </Badge>
+                            </div>
 
-                      <div className="flex flex-wrap gap-1">
-                        {(
-                          [
-                            ['AVAILABLE', 'Trống'],
-                            ['OCCUPIED', 'Có khách'],
-                            ['RESERVED', 'Đã đặt'],
-                          ] as const
-                        ).map(([st, label]) => (
-                          <button
-                            key={st}
-                            type="button"
-                            disabled={busy || t.status === st}
-                            onClick={() => void handlePosTableStatus(t.id, st)}
-                            className={`px-2 py-1 rounded text-[10px] font-bold border cursor-pointer ${
-                              t.status === st
-                                ? 'bg-slate-900 text-white border-slate-900'
-                                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-                            }`}
-                          >
-                            {label}
-                          </button>
-                        ))}
-                      </div>
+                            {/* Orders Summary (clean pill) */}
+                            <TableOrdersSummary
+                              orders={t.orders}
+                              onOpen={() => setPosOrdersTableId(t.id)}
+                            />
+                          </div>
 
-                      <Button
-                        size="xs"
-                        onClick={() => {
-                          setSelectedTableId(t.id);
-                          setPosTableDialogOpen(false);
-                          toast.success(`Đã chọn bàn ${t.code} cho đơn hàng POS`);
-                        }}
-                        className="w-full bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold cursor-pointer"
-                      >
-                        <CheckCircle2 className="size-3.5 mr-1" />
-                        Chọn bàn này gọi món
-                      </Button>
-                    </div>
-                  );
-                })}
+                          <div className="space-y-2 pt-2 border-t border-slate-100">
+                            {/* 3-pill status toggle */}
+                            {(() => {
+                              const hasUnpaid = (t.orders || []).some(
+                                (o) => o.status === 'AWAITING_PAYMENT',
+                              );
+                              return (
+                                <div className="grid grid-cols-3 gap-0.5 bg-slate-100/90 p-0.5 rounded-lg text-center">
+                                  {(
+                                    [
+                                      ['AVAILABLE', 'Trống'],
+                                      ['OCCUPIED', 'Khách'],
+                                      ['RESERVED', 'Đặt'],
+                                    ] as const
+                                  ).map(([st, label]) => {
+                                    const isLocked =
+                                      hasUnpaid &&
+                                      t.status !== st &&
+                                      (st === 'AVAILABLE' || st === 'RESERVED');
+                                    return (
+                                      <button
+                                        key={st}
+                                        type="button"
+                                        disabled={busy || t.status === st}
+                                        onClick={() => void handlePosTableStatus(t.id, st)}
+                                        title={
+                                          isLocked
+                                            ? 'Bàn có hóa đơn chưa thanh toán - không thể đổi trạng thái!'
+                                            : undefined
+                                        }
+                                        className={`py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+                                          t.status === st
+                                            ? 'bg-white text-slate-900 shadow-2xs'
+                                            : isLocked
+                                              ? 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                                              : 'text-slate-500 hover:text-slate-900'
+                                        }`}
+                                      >
+                                        {isLocked ? `🔒 ${label}` : label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
+
+                            {/* Primary Action Button */}
+                            <Button
+                              size="xs"
+                              onClick={() => {
+                                setSelectedTableId(t.id);
+                                setPosTableDialogOpen(false);
+                                toast.success(`Đã chọn bàn ${t.code} cho đơn hàng POS`);
+                              }}
+                              className={`w-full text-xs font-bold transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs'
+                                  : 'bg-orange-600 hover:bg-orange-700 text-white'
+                              }`}
+                            >
+                              {isSelected ? (
+                                <>
+                                  <CheckCircle2 className="size-3.5 mr-1" />
+                                  Đang chọn bàn
+                                </>
+                              ) : (
+                                'Chọn bàn gọi món'
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
 

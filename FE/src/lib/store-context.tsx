@@ -51,7 +51,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (saved && scoped.some((s) => s.id === saved)) {
         setCurrentStoreIdState(saved);
       } else if (scoped.length > 0) {
-        const preferred = scoped.find((s) => s.name === 'Chick Res Main') ?? scoped[0];
+        const preferred =
+          scoped.find((s) => s.name.includes('Quận 1') || s.name === 'Chick Res Main') ?? scoped[0];
         setCurrentStoreIdState(preferred.id);
         if (typeof window !== 'undefined') {
           localStorage.setItem(STORE_STORAGE_KEY, preferred.id);

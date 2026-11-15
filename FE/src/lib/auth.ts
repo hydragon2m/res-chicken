@@ -71,10 +71,18 @@ export async function login(email: string, password: string): Promise<Actor> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email, password }),
   });
-  if (!response.ok) throw new ApiError(response.status, 'Email hoặc mật khẩu không đúng.');
+  if (!response.ok) {
+    if (response.status === 429) {
+      throw new ApiError(429, 'Thao tác chuyển tài khoản quá nhanh. Vui lòng thử lại sau vài giây.');
+    }
+    throw new ApiError(response.status, 'Email hoặc mật khẩu không đúng.');
+  }
   const body = (await response.json()) as { accessToken: string; user: Actor };
   accessToken = body.accessToken;
   currentActor = body.user;
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('chickres_active_store_id');
+  }
   return body.user;
 }
 
@@ -138,22 +146,25 @@ export async function logout(): Promise<void> {
       credentials: 'include',
       headers: { authorization: `Bearer ${accessToken}` },
     });
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('chickres_active_store_id');
+  }
   clearSession();
 }
 
 export const ROLE_LABELS: Record<string, string> = {
-  ADMIN: 'Quản trị viên',
-  MANAGER: 'Quản lý nhà hàng',
-  CASHIER: 'Thu ngân',
-  KITCHEN: 'Nhân viên bếp',
-  INVENTORY_CLERK: 'Nhân viên kho',
+  ADMIN: 'Chủ chuỗi / Quản trị viên',
+  MANAGER: 'Quản lý chi nhánh',
+  CASHIER: 'Thu ngân POS',
+  KITCHEN: 'Điều phối bếp KDS',
+  INVENTORY_CLERK: 'Thủ kho & Kiểm kê',
 };
 
 export function getDefaultRouteForActor(actor: Actor): string {
   if (actor.permissions.includes('reports.read')) return '/admin';
   if (actor.permissions.includes('orders.create')) return '/pos';
   if (actor.permissions.includes('fulfillment.read')) return '/kds/frying';
-  if (actor.permissions.includes('inventory.read')) return '/admin/inventory';
+  if (actor.permissions.includes('inventory.read')) return '/admin/inventory/stock';
   if (actor.permissions.includes('identity.read')) return '/admin/team';
   if (actor.permissions.includes('catalog.read')) return '/admin/catalog/categories';
   if (actor.permissions.includes('orders.read')) return '/orders';

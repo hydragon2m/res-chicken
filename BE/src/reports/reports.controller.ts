@@ -72,8 +72,9 @@ export class ReportsController {
   dashboardMetrics(
     @CurrentUser() actor: AuthenticatedUser,
     @Query('storeId', new ParseUUIDPipe()) storeId: string,
+    @Query('range') range?: string,
   ) {
-    return this.reports.dashboardMetrics(actor, storeId);
+    return this.reports.dashboardMetrics(actor, storeId, range);
   }
 
   @RequirePermissions('reports.export')

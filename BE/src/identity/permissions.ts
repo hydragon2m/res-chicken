@@ -74,6 +74,7 @@ const permissionsByRole: Record<UserRole, ReadonlySet<Permission>> = {
     'shifts.close',
     'payments.capture',
     'payments.read',
+    'payments.refund',
     'fulfillment.read',
     'reservations.manage',
     'tables.manage',

@@ -40,18 +40,61 @@ export class CatalogService {
   }
   async createCategory(actor: AuthenticatedUser, dto: CreateCategoryDto) {
     this.assertStore(actor, dto.storeId);
-    return this.write(() => this.prisma.category.create({ data: dto }));
+    const created = await this.write(() => this.prisma.category.create({ data: dto }));
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(dto.storeId);
+      for (const targetStoreId of otherStores) {
+        await this.prisma.category
+          .upsert({
+            where: { storeId_name: { storeId: targetStoreId, name: created.name } },
+            update: { sortOrder: created.sortOrder, isActive: created.isActive },
+            create: {
+              storeId: targetStoreId,
+              name: created.name,
+              sortOrder: created.sortOrder,
+              isActive: created.isActive,
+            },
+          })
+          .catch(() => undefined);
+      }
+    }
+    return created;
   }
   async updateCategory(actor: AuthenticatedUser, id: string, dto: UpdateCategoryDto) {
     const category = await this.category(actor, id);
-    return this.write(() => this.prisma.category.update({ where: { id: category.id }, data: dto }));
+    const updated = await this.write(() =>
+      this.prisma.category.update({ where: { id: category.id }, data: dto }),
+    );
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(category.storeId);
+      if (otherStores.length > 0) {
+        await this.prisma.category
+          .updateMany({
+            where: { storeId: { in: otherStores }, name: category.name },
+            data: dto,
+          })
+          .catch(() => undefined);
+      }
+    }
+    return updated;
   }
   async deleteCategory(actor: AuthenticatedUser, id: string) {
     const category = await this.category(actor, id);
-    return this.write(
+    const deleted = await this.write(
       () => this.prisma.category.delete({ where: { id: category.id } }),
       'A category with products cannot be deleted.',
     );
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(category.storeId);
+      for (const targetStoreId of otherStores) {
+        await this.prisma.category
+          .deleteMany({
+            where: { storeId: targetStoreId, name: category.name, products: { none: {} } },
+          })
+          .catch(() => undefined);
+      }
+    }
+    return deleted;
   }
 
   async listProducts(actor: AuthenticatedUser, storeId: string) {
@@ -71,8 +114,8 @@ export class CatalogService {
   }
   async createProduct(actor: AuthenticatedUser, dto: CreateProductDto) {
     this.assertStore(actor, dto.storeId);
-    await this.categoryForStore(dto.categoryId, dto.storeId);
-    return this.write(() =>
+    const sourceCategory = await this.categoryForStore(dto.categoryId, dto.storeId);
+    const created = await this.write(() =>
       this.prisma.product.create({
         data: {
           storeId: dto.storeId,
@@ -84,10 +127,52 @@ export class CatalogService {
         include: { variants: true },
       }),
     );
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(dto.storeId);
+      for (const targetStoreId of otherStores) {
+        try {
+          const targetCat = await this.prisma.category.upsert({
+            where: { storeId_name: { storeId: targetStoreId, name: sourceCategory.name } },
+            update: {},
+            create: {
+              storeId: targetStoreId,
+              name: sourceCategory.name,
+              sortOrder: sourceCategory.sortOrder,
+              isActive: sourceCategory.isActive,
+            },
+          });
+          const existingProd = await this.prisma.product.findFirst({
+            where: { storeId: targetStoreId, name: created.name },
+          });
+          if (!existingProd) {
+            await this.prisma.product.create({
+              data: {
+                storeId: targetStoreId,
+                categoryId: targetCat.id,
+                name: created.name,
+                imageUrl: created.imageUrl,
+                variants: {
+                  create: (dto.variants ?? []).map((v) => ({
+                    name: v.name,
+                  })),
+                },
+              },
+            });
+          }
+        } catch {
+          // Ignore individual store conflicts (e.g. custom SKU already used in target store)
+        }
+      }
+    }
+    return created;
   }
   async updateProduct(actor: AuthenticatedUser, id: string, dto: UpdateProductDto) {
     const product = await this.product(actor, id);
-    if (dto.categoryId) await this.categoryForStore(dto.categoryId, product.storeId);
+    let newCategoryName: string | undefined;
+    if (dto.categoryId) {
+      const cat = await this.categoryForStore(dto.categoryId, product.storeId);
+      newCategoryName = cat.name;
+    }
     if (dto.inventoryMode === InventoryMode.TRACKED) {
       const activeRecipe = await this.prisma.recipeRevision.findFirst({
         where: { storeId: product.storeId, productId: product.id, isActive: true },
@@ -98,27 +183,136 @@ export class CatalogService {
           'Create an active recipe before enabling inventory tracking for this product.',
         );
     }
-    return this.write(() => this.prisma.product.update({ where: { id }, data: dto }));
+    const updated = await this.write(() => this.prisma.product.update({ where: { id }, data: dto }));
+    const isSoldOutOnly =
+      dto.isSoldOut !== undefined &&
+      dto.name === undefined &&
+      dto.categoryId === undefined &&
+      dto.imageUrl === undefined &&
+      dto.isActive === undefined &&
+      dto.inventoryMode === undefined;
+    if (this.isChainAdmin(actor) && !isSoldOutOnly) {
+      const otherStores = await this.otherStoreIds(product.storeId);
+      for (const targetStoreId of otherStores) {
+        try {
+          const targetProd = await this.prisma.product.findFirst({
+            where: { storeId: targetStoreId, name: product.name },
+          });
+          if (!targetProd) continue;
+          let targetCategoryId: string | undefined;
+          if (newCategoryName) {
+            const targetCat = await this.prisma.category.findUnique({
+              where: { storeId_name: { storeId: targetStoreId, name: newCategoryName } },
+            });
+            if (targetCat) targetCategoryId = targetCat.id;
+          }
+          let targetInventoryMode = dto.inventoryMode;
+          if (targetInventoryMode === InventoryMode.TRACKED) {
+            const hasTargetRecipe = await this.prisma.recipeRevision.findFirst({
+              where: { storeId: targetStoreId, productId: targetProd.id, isActive: true },
+              select: { id: true },
+            });
+            if (!hasTargetRecipe) targetInventoryMode = undefined;
+          }
+          await this.prisma.product.update({
+            where: { id: targetProd.id },
+            data: {
+              ...(dto.name !== undefined ? { name: dto.name } : {}),
+              ...(dto.imageUrl !== undefined ? { imageUrl: dto.imageUrl } : {}),
+              ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+              ...(targetCategoryId ? { categoryId: targetCategoryId } : {}),
+              ...(targetInventoryMode !== undefined ? { inventoryMode: targetInventoryMode } : {}),
+            },
+          });
+        } catch {
+          // Ignore individual store conflict
+        }
+      }
+    }
+    return updated;
   }
   async deleteProduct(actor: AuthenticatedUser, id: string) {
     const product = await this.product(actor, id);
-    return this.prisma.product.delete({ where: { id: product.id } });
+    const deleted = await this.prisma.product.delete({ where: { id: product.id } });
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(product.storeId);
+      for (const targetStoreId of otherStores) {
+        await this.prisma.product
+          .deleteMany({ where: { storeId: targetStoreId, name: product.name } })
+          .catch(() => undefined);
+      }
+    }
+    return deleted;
   }
   async createVariant(actor: AuthenticatedUser, productId: string, dto: CreateVariantDto) {
     const product = await this.product(actor, productId);
-    return this.write(() =>
+    const created = await this.write(() =>
       this.prisma.productVariant.create({ data: { productId: product.id, ...dto } }),
     );
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(product.storeId);
+      for (const targetStoreId of otherStores) {
+        try {
+          const targetProd = await this.prisma.product.findFirst({
+            where: { storeId: targetStoreId, name: product.name },
+          });
+          if (!targetProd) continue;
+          const exists = await this.prisma.productVariant.findFirst({
+            where: { productId: targetProd.id, name: dto.name },
+          });
+          if (!exists) {
+            await this.prisma.productVariant.create({
+              data: { productId: targetProd.id, ...dto },
+            });
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    }
+    return created;
   }
   async updateVariant(actor: AuthenticatedUser, id: string, dto: UpdateVariantDto) {
     const variant = await this.variant(actor, id);
-    return this.write(() =>
+    const updated = await this.write(() =>
       this.prisma.productVariant.update({ where: { id: variant.id }, data: dto }),
     );
+    const isSoldOutOnly = dto.isSoldOut !== undefined && dto.name === undefined;
+    if (this.isChainAdmin(actor) && !isSoldOutOnly) {
+      const otherStores = await this.otherStoreIds(variant.product.storeId);
+      for (const targetStoreId of otherStores) {
+        await this.prisma.productVariant
+          .updateMany({
+            where: {
+              name: variant.name,
+              product: { storeId: targetStoreId, name: variant.product.name },
+            },
+            data: {
+              ...(dto.name !== undefined ? { name: dto.name } : {}),
+            },
+          })
+          .catch(() => undefined);
+      }
+    }
+    return updated;
   }
   async deleteVariant(actor: AuthenticatedUser, id: string) {
     const variant = await this.variant(actor, id);
-    return this.prisma.productVariant.delete({ where: { id: variant.id } });
+    const deleted = await this.prisma.productVariant.delete({ where: { id: variant.id } });
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(variant.product.storeId);
+      for (const targetStoreId of otherStores) {
+        await this.prisma.productVariant
+          .deleteMany({
+            where: {
+              name: variant.name,
+              product: { storeId: targetStoreId, name: variant.product.name },
+            },
+          })
+          .catch(() => undefined);
+      }
+    }
+    return deleted;
   }
 
   async listOptionGroups(actor: AuthenticatedUser, storeId: string) {
@@ -132,7 +326,7 @@ export class CatalogService {
   async createOptionGroup(actor: AuthenticatedUser, dto: CreateOptionGroupDto) {
     this.assertStore(actor, dto.storeId);
     this.assertSelectionBounds(dto.minSelections, dto.maxSelections);
-    return this.write(() =>
+    const created = await this.write(() =>
       this.prisma.optionGroup.create({
         data: {
           storeId: dto.storeId,
@@ -144,6 +338,30 @@ export class CatalogService {
         include: { options: true },
       }),
     );
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(dto.storeId);
+      for (const targetStoreId of otherStores) {
+        try {
+          const existing = await this.prisma.optionGroup.findUnique({
+            where: { storeId_name: { storeId: targetStoreId, name: created.name } },
+          });
+          if (!existing) {
+            await this.prisma.optionGroup.create({
+              data: {
+                storeId: targetStoreId,
+                name: created.name,
+                minSelections: created.minSelections,
+                maxSelections: created.maxSelections,
+                options: { create: dto.options },
+              },
+            });
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    }
+    return created;
   }
   async updateOptionGroup(actor: AuthenticatedUser, id: string, dto: UpdateOptionGroupDto) {
     const group = await this.optionGroup(actor, id);
@@ -151,31 +369,114 @@ export class CatalogService {
       dto.minSelections ?? group.minSelections,
       dto.maxSelections ?? group.maxSelections,
     );
-    return this.write(() =>
+    const updated = await this.write(() =>
       this.prisma.optionGroup.update({
         where: { id: group.id },
         data: dto,
         include: { options: true },
       }),
     );
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(group.storeId);
+      if (otherStores.length > 0) {
+        await this.prisma.optionGroup
+          .updateMany({
+            where: { storeId: { in: otherStores }, name: group.name },
+            data: dto,
+          })
+          .catch(() => undefined);
+      }
+    }
+    return updated;
   }
   async deleteOptionGroup(actor: AuthenticatedUser, id: string) {
     const group = await this.optionGroup(actor, id);
-    return this.prisma.optionGroup.delete({ where: { id: group.id } });
+    const deleted = await this.prisma.optionGroup.delete({ where: { id: group.id } });
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(group.storeId);
+      if (otherStores.length > 0) {
+        await this.prisma.optionGroup
+          .deleteMany({ where: { storeId: { in: otherStores }, name: group.name } })
+          .catch(() => undefined);
+      }
+    }
+    return deleted;
   }
   async createOption(actor: AuthenticatedUser, groupId: string, dto: CreateOptionDto) {
     const group = await this.optionGroup(actor, groupId);
-    return this.write(() =>
+    const created = await this.write(() =>
       this.prisma.option.create({ data: { optionGroupId: group.id, ...dto } }),
     );
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(group.storeId);
+      for (const targetStoreId of otherStores) {
+        try {
+          const targetGroup = await this.prisma.optionGroup.findUnique({
+            where: { storeId_name: { storeId: targetStoreId, name: group.name } },
+          });
+          if (targetGroup) {
+            await this.prisma.option.upsert({
+              where: {
+                optionGroupId_name: { optionGroupId: targetGroup.id, name: created.name },
+              },
+              update: { priceDelta: created.priceDelta },
+              create: {
+                optionGroupId: targetGroup.id,
+                name: created.name,
+                priceDelta: created.priceDelta,
+              },
+            });
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    }
+    return created;
   }
   async updateOption(actor: AuthenticatedUser, id: string, dto: UpdateOptionDto) {
     const option = await this.option(actor, id);
-    return this.write(() => this.prisma.option.update({ where: { id: option.id }, data: dto }));
+    const updated = await this.write(() =>
+      this.prisma.option.update({ where: { id: option.id }, data: dto }),
+    );
+    const isSoldOutOnly =
+      dto.isSoldOut !== undefined && dto.name === undefined && dto.priceDelta === undefined;
+    if (this.isChainAdmin(actor) && !isSoldOutOnly) {
+      const otherStores = await this.otherStoreIds(option.group.storeId);
+      for (const targetStoreId of otherStores) {
+        await this.prisma.option
+          .updateMany({
+            where: {
+              name: option.name,
+              group: { storeId: targetStoreId, name: option.group.name },
+            },
+            data: {
+              ...(dto.name !== undefined ? { name: dto.name } : {}),
+              ...(dto.priceDelta !== undefined ? { priceDelta: dto.priceDelta } : {}),
+            },
+          })
+          .catch(() => undefined);
+      }
+    }
+    return updated;
   }
   async deleteOption(actor: AuthenticatedUser, id: string) {
     const option = await this.option(actor, id);
-    return this.prisma.option.delete({ where: { id: option.id } });
+    const deleted = await this.prisma.option.delete({ where: { id: option.id } });
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(option.group.storeId);
+      for (const targetStoreId of otherStores) {
+        await this.prisma.option
+          .deleteMany({
+            where: {
+              name: option.name,
+              group: { storeId: targetStoreId, name: option.group.name },
+            },
+          })
+          .catch(() => undefined);
+      }
+    }
+    return deleted;
   }
 
   async setProductSoldOut(actor: AuthenticatedUser, id: string, isSoldOut: boolean) {
@@ -192,17 +493,59 @@ export class CatalogService {
     const group = await this.optionGroup(actor, dto.optionGroupId);
     if (product.storeId !== group.storeId)
       throw new ForbiddenException('Option group belongs to another store.');
-    return this.prisma.productOptionGroup.upsert({
+    const linked = await this.prisma.productOptionGroup.upsert({
       where: { productId_optionGroupId: { productId, optionGroupId: group.id } },
       update: {},
       create: { productId, optionGroupId: group.id },
     });
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(product.storeId);
+      for (const targetStoreId of otherStores) {
+        try {
+          const [targetProd, targetGroup] = await Promise.all([
+            this.prisma.product.findFirst({ where: { storeId: targetStoreId, name: product.name } }),
+            this.prisma.optionGroup.findUnique({
+              where: { storeId_name: { storeId: targetStoreId, name: group.name } },
+            }),
+          ]);
+          if (targetProd && targetGroup) {
+            await this.prisma.productOptionGroup.upsert({
+              where: {
+                productId_optionGroupId: {
+                  productId: targetProd.id,
+                  optionGroupId: targetGroup.id,
+                },
+              },
+              update: {},
+              create: { productId: targetProd.id, optionGroupId: targetGroup.id },
+            });
+          }
+        } catch {
+          // Ignore
+        }
+      }
+    }
+    return linked;
   }
   async unlinkOptionGroup(actor: AuthenticatedUser, productId: string, optionGroupId: string) {
     const product = await this.product(actor, productId);
+    const group = await this.optionGroup(actor, optionGroupId).catch(() => null);
     await this.prisma.productOptionGroup.deleteMany({
       where: { productId: product.id, optionGroupId },
     });
+    if (this.isChainAdmin(actor) && group) {
+      const otherStores = await this.otherStoreIds(product.storeId);
+      for (const targetStoreId of otherStores) {
+        await this.prisma.productOptionGroup
+          .deleteMany({
+            where: {
+              product: { storeId: targetStoreId, name: product.name },
+              optionGroup: { storeId: targetStoreId, name: group.name },
+            },
+          })
+          .catch(() => undefined);
+      }
+    }
     return { productId: product.id, optionGroupId };
   }
 
@@ -219,32 +562,35 @@ export class CatalogService {
     const startsAt = this.date(dto.startsAt);
     const endsAt = dto.endsAt ? this.date(dto.endsAt) : null;
     this.assertPriceBounds(startsAt, endsAt);
-    const created = await this.prisma.$transaction(async (tx) => {
-      const overlaps = await tx.priceSchedule.findMany({
-        where: {
-          variantId: variant.id,
-          AND: [
-            { startsAt: { lt: endsAt ?? new Date('9999-12-31') } },
-            { OR: [{ endsAt: null }, { endsAt: { gt: startsAt } }] },
-          ],
-        },
-      });
-      for (const existing of overlaps) {
-        if (existing.startsAt < startsAt) {
-          await tx.priceSchedule.update({
-            where: { id: existing.id },
-            data: { endsAt: startsAt },
-          });
-        } else {
-          await tx.priceSchedule.delete({
-            where: { id: existing.id },
-          });
+    const applyVariantPrice = async (targetVariantId: string) =>
+      this.prisma.$transaction(async (tx) => {
+        const overlaps = await tx.priceSchedule.findMany({
+          where: {
+            variantId: targetVariantId,
+            AND: [
+              { startsAt: { lt: endsAt ?? new Date('9999-12-31') } },
+              { OR: [{ endsAt: null }, { endsAt: { gt: startsAt } }] },
+            ],
+          },
+        });
+        for (const existing of overlaps) {
+          if (existing.startsAt < startsAt) {
+            await tx.priceSchedule.update({
+              where: { id: existing.id },
+              data: { endsAt: startsAt },
+            });
+          } else {
+            await tx.priceSchedule.delete({
+              where: { id: existing.id },
+            });
+          }
         }
-      }
-      return tx.priceSchedule.create({
-        data: { variantId: variant.id, amount: dto.amount, startsAt, endsAt },
+        return tx.priceSchedule.create({
+          data: { variantId: targetVariantId, amount: dto.amount, startsAt, endsAt },
+        });
       });
-    });
+
+    const created = await applyVariantPrice(variant.id);
     await this.audit.write(this.prisma, {
       storeId: variant.product.storeId,
       actorId: actor.id,
@@ -253,6 +599,22 @@ export class CatalogService {
       targetId: created.id,
       metadata: { after: this.priceSnapshot(created) },
     });
+
+    if (this.isChainAdmin(actor)) {
+      const otherStores = await this.otherStoreIds(variant.product.storeId);
+      if (otherStores.length > 0) {
+        const peerVariants = await this.prisma.productVariant.findMany({
+          where: {
+            name: variant.name,
+            product: { storeId: { in: otherStores }, name: variant.product.name },
+          },
+          select: { id: true },
+        });
+        for (const peer of peerVariants) {
+          await applyVariantPrice(peer.id).catch(() => undefined);
+        }
+      }
+    }
     return created;
   }
   async updatePrice(actor: AuthenticatedUser, id: string, dto: UpdatePriceDto) {
@@ -565,6 +927,16 @@ export class CatalogService {
   private assertStore(actor: AuthenticatedUser, storeId: string) {
     if (!actor.isPlatformAdmin && !actor.storeIds.includes(storeId))
       throw new ForbiddenException('Store access denied.');
+  }
+  private isChainAdmin(actor: AuthenticatedUser) {
+    return Boolean(actor.isPlatformAdmin || actor.role === 'ADMIN');
+  }
+  private async otherStoreIds(excludeStoreId: string) {
+    const stores = await this.prisma.store.findMany({
+      where: { id: { not: excludeStoreId } },
+      select: { id: true },
+    });
+    return stores.map((s) => s.id);
   }
   private priceSnapshot(schedule: {
     variantId: string;

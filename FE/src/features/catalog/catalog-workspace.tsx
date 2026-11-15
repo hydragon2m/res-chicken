@@ -212,15 +212,28 @@ export function CatalogWorkspace({ initialSection }: { initialSection: Section }
             <UtensilsCrossed className="size-5" />
           </div>
           <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
-              Quản Lý Thực Đơn, Món Ăn & Bảng Giá
-            </h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">
+                Quản Lý Thực Đơn, Món Ăn & Bảng Giá
+              </h1>
+              {actor.isPlatformAdmin || actor.role === 'ADMIN' ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 text-[11px] font-bold text-indigo-800">
+                  🌐 Chế độ Admin: Tự động thêm/sửa cho Toàn bộ Chi nhánh
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-0.5 text-[11px] font-bold text-amber-800">
+                  🏪 Chế độ Quản lý: Chỉ áp dụng riêng tại {currentStore?.name ?? 'Cửa hàng này'}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Chi nhánh:{' '}
+              Chi nhánh đang xem:{' '}
               <span className="font-semibold text-slate-700">
                 {currentStore?.name ?? 'Chick Res Main'}
               </span>{' '}
               • {products.length} món ăn • {categories.length} danh mục • {groups.length} nhóm sốt
+              {(actor.isPlatformAdmin || actor.role === 'ADMIN') &&
+                ' • (Bật/tắt "Hết hàng" chỉ tác động riêng chi nhánh đang chọn)'}
             </p>
           </div>
         </div>

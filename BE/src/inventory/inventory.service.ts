@@ -43,7 +43,7 @@ export class InventoryService {
     this.assertStore(actor, dto.storeId);
     const name = this.text(dto.name, 'Supplier name');
     const note = dto.note?.trim() || dto.email?.trim() || undefined;
-    return this.write(() =>
+    const created = await this.write(() =>
       this.prisma.supplier.upsert({
         where: { storeId_name: { storeId: dto.storeId, name } },
         update: {
@@ -59,6 +59,22 @@ export class InventoryService {
         },
       }),
     );
+    if (actor.isPlatformAdmin || actor.role === 'ADMIN') {
+      const otherStores = await this.prisma.store.findMany({
+        where: { id: { not: dto.storeId } },
+        select: { id: true },
+      });
+      for (const s of otherStores) {
+        await this.prisma.supplier
+          .upsert({
+            where: { storeId_name: { storeId: s.id, name } },
+            update: { phone: dto.phone ?? undefined, note, isActive: true },
+            create: { storeId: s.id, name, phone: dto.phone ?? undefined, note },
+          })
+          .catch(() => undefined);
+      }
+    }
+    return created;
   }
 
   async listLocations(actor: AuthenticatedUser, storeId: string) {
@@ -89,8 +105,9 @@ export class InventoryService {
     const existingByName = await this.prisma.ingredient.findUnique({
       where: { storeId_name: { storeId: dto.storeId, name } },
     });
+    let created: Awaited<ReturnType<typeof this.prisma.ingredient.create>>;
     if (existingByName) {
-      return this.prisma.ingredient.update({
+      created = await this.prisma.ingredient.update({
         where: { id: existingByName.id },
         data: {
           unit: dto.unit,
@@ -98,24 +115,52 @@ export class InventoryService {
           isActive: true,
         },
       });
+    } else {
+      const rawSku = dto.sku?.trim() || this.autoSku(name);
+      let finalSku = rawSku;
+      const existingBySku = await this.prisma.ingredient.findUnique({
+        where: { storeId_sku: { storeId: dto.storeId, sku: finalSku } },
+      });
+      if (existingBySku) {
+        finalSku = `${rawSku.slice(0, 68)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+      }
+      created = await this.write(() =>
+        this.prisma.ingredient.create({
+          data: {
+            ...dto,
+            sku: finalSku,
+            name,
+          },
+        }),
+      );
     }
-    const rawSku = dto.sku?.trim() || this.autoSku(name);
-    let finalSku = rawSku;
-    const existingBySku = await this.prisma.ingredient.findUnique({
-      where: { storeId_sku: { storeId: dto.storeId, sku: finalSku } },
-    });
-    if (existingBySku) {
-      finalSku = `${rawSku.slice(0, 68)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
+    if (actor.isPlatformAdmin || actor.role === 'ADMIN') {
+      const otherStores = await this.prisma.store.findMany({
+        where: { id: { not: dto.storeId } },
+        select: { id: true },
+      });
+      for (const s of otherStores) {
+        await this.prisma.ingredient
+          .upsert({
+            where: { storeId_name: { storeId: s.id, name: created.name } },
+            update: {
+              unit: created.unit,
+              lowStockQuantity: created.lowStockQuantity,
+              isActive: true,
+            },
+            create: {
+              storeId: s.id,
+              name: created.name,
+              sku: created.sku,
+              unit: created.unit,
+              lowStockQuantity: created.lowStockQuantity,
+              isActive: true,
+            },
+          })
+          .catch(() => undefined);
+      }
     }
-    return this.write(() =>
-      this.prisma.ingredient.create({
-        data: {
-          ...dto,
-          sku: finalSku,
-          name,
-        },
-      }),
-    );
+    return created;
   }
 
   async listReceipts(actor: AuthenticatedUser, storeId: string) {
@@ -433,7 +478,7 @@ export class InventoryService {
     await this.catalog.assertProductInStore(actor, dto.productId);
     if (new Set(dto.lines.map((line) => line.ingredientId)).size !== dto.lines.length)
       throw new BadRequestException('Each ingredient may appear only once in a recipe.');
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       await this.lockStore(tx, dto.storeId);
       const ingredients = await tx.ingredient.count({
         where: {
@@ -467,6 +512,61 @@ export class InventoryService {
         include: { lines: { include: { ingredient: true } }, product: true },
       });
     });
+
+    if (actor.isPlatformAdmin || actor.role === 'ADMIN') {
+      const otherStores = await this.prisma.store.findMany({
+        where: { id: { not: dto.storeId } },
+        select: { id: true },
+      });
+      for (const s of otherStores) {
+        try {
+          const targetProd = await this.prisma.product.findFirst({
+            where: { storeId: s.id, name: created.product.name },
+          });
+          if (!targetProd) continue;
+          const mappedLines: Array<{ ingredientId: string; quantity: number }> = [];
+          for (const line of created.lines) {
+            const targetIng = await this.prisma.ingredient.upsert({
+              where: { storeId_name: { storeId: s.id, name: line.ingredient.name } },
+              update: {},
+              create: {
+                storeId: s.id,
+                name: line.ingredient.name,
+                sku: line.ingredient.sku,
+                unit: line.ingredient.unit,
+                lowStockQuantity: line.ingredient.lowStockQuantity,
+                isActive: true,
+              },
+            });
+            mappedLines.push({ ingredientId: targetIng.id, quantity: line.quantity });
+          }
+          const latestTarget = await this.prisma.recipeRevision.aggregate({
+            where: { productId: targetProd.id },
+            _max: { version: true },
+          });
+          await this.prisma.recipeRevision.updateMany({
+            where: { productId: targetProd.id, isActive: true },
+            data: { isActive: false },
+          });
+          await this.prisma.product.update({
+            where: { id: targetProd.id },
+            data: { inventoryMode: 'TRACKED' },
+          });
+          await this.prisma.recipeRevision.create({
+            data: {
+              storeId: s.id,
+              productId: targetProd.id,
+              version: (latestTarget._max.version ?? 0) + 1,
+              createdById: actor.id,
+              lines: { create: mappedLines },
+            },
+          });
+        } catch {
+          // Ignore individual store conflict
+        }
+      }
+    }
+    return created;
   }
 
   async listRecipes(actor: AuthenticatedUser, storeId: string) {

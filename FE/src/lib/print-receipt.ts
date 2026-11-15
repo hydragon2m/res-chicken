@@ -101,17 +101,17 @@ export function printOrderReceipt(order: PrintableOrderData) {
   const phoneLine = order.storePhone ? `<div class="sub">Hotline: ${escapeHtml(order.storePhone)}</div>` : '';
   const taxLine = order.storeTaxCode ? `<div class="sub">MST: ${escapeHtml(order.storeTaxCode)}</div>` : '';
   const channelLabel = order.tableCode
-    ? `Tại bàn: ${escapeHtml(order.tableCode)}`
+    ? `Táº¡i bĂ n: ${escapeHtml(order.tableCode)}`
     : order.source === 'QR'
-      ? 'Khách đặt QR tại bàn'
-      : 'Tại quầy POS';
+      ? 'KhĂ¡ch Ä‘áº·t QR táº¡i bĂ n'
+      : 'Táº¡i quáº§y POS';
 
   const paymentLabel =
     order.paymentMethod === 'CASH'
-      ? 'Tiền mặt (CASH)'
+      ? 'Tiá»n máº·t (CASH)'
       : order.paymentMethod
-        ? 'Chuyển khoản VietQR'
-        : 'Chưa thanh toán';
+        ? 'Chuyá»ƒn khoáº£n VietQR'
+        : 'ChÆ°a thanh toĂ¡n';
 
   const itemsHtml = order.items
     .map((item) => {
@@ -137,27 +137,27 @@ export function printOrderReceipt(order: PrintableOrderData) {
   const discountRow =
     (order.discountAmount ?? 0) > 0
       ? `<div class="sum-row">
-          <span>Giảm giá${order.voucherCode ? ` (${escapeHtml(order.voucherCode)})` : ''}:</span>
+          <span>Giáº£m giĂ¡${order.voucherCode ? ` (${escapeHtml(order.voucherCode)})` : ''}:</span>
           <span>-${money.format(order.discountAmount!)}</span>
         </div>`
       : '';
   const taxRow =
     (order.taxAmount ?? 0) > 0
       ? `<div class="sum-row">
-          <span>Thuế VAT (${Math.round((order.taxRate ?? 0) * 100)}%):</span>
+          <span>Thuáº¿ VAT (${Math.round((order.taxRate ?? 0) * 100)}%):</span>
           <span>+${money.format(order.taxAmount!)}</span>
         </div>`
       : '';
 
   const footerText = escapeHtml(
-    order.receiptFooter || 'Cảm ơn quý khách và hẹn gặp lại tại Chick Res!',
+    order.receiptFooter || 'Cáº£m Æ¡n quĂ½ khĂ¡ch vĂ  háº¹n gáº·p láº¡i táº¡i Chick Res!',
   );
 
   const html = `<!DOCTYPE html>
 <html lang="vi">
 <head>
   <meta charset="utf-8" />
-  <title>Hóa đơn #${shortId}</title>
+  <title>HĂ³a Ä‘Æ¡n #${shortId}</title>
   <style>
     @page {
       size: 80mm auto;
@@ -292,22 +292,22 @@ export function printOrderReceipt(order: PrintableOrderData) {
     ${addressLine}
     ${phoneLine}
     ${taxLine}
-    <div class="receipt-title">HÓA ĐƠN THANH TOÁN</div>
+    <div class="receipt-title">HĂ“A ÄÆ N THANH TOĂN</div>
   </div>
 
   <div class="divider"></div>
 
   <div class="meta">
     <div class="meta-row">
-      <span>Mã phiếu:</span>
+      <span>MĂ£ phiáº¿u:</span>
       <strong>#${shortId}</strong>
     </div>
     <div class="meta-row">
-      <span>Thời gian:</span>
+      <span>Thá»i gian:</span>
       <span>${escapeHtml(timeStr)}</span>
     </div>
     <div class="meta-row">
-      <span>Phục vụ:</span>
+      <span>Phá»¥c vá»¥:</span>
       <strong>${channelLabel}</strong>
     </div>
   </div>
@@ -315,9 +315,9 @@ export function printOrderReceipt(order: PrintableOrderData) {
   <table>
     <thead>
       <tr>
-        <th class="col-name">Tên món</th>
+        <th class="col-name">TĂªn mĂ³n</th>
         <th class="col-qty">SL</th>
-        <th class="col-price">Thành tiền</th>
+        <th class="col-price">ThĂ nh tiá»n</th>
       </tr>
     </thead>
     <tbody>
@@ -326,24 +326,184 @@ export function printOrderReceipt(order: PrintableOrderData) {
   </table>
 
   <div class="sum-row">
-    <span>Tạm tính:</span>
+    <span>Táº¡m tĂ­nh:</span>
     <span>${money.format(subtotal)}</span>
   </div>
   ${discountRow}
   ${taxRow}
 
   <div class="total-row">
-    <span>TỔNG CỘNG:</span>
+    <span>Tá»”NG Cá»˜NG:</span>
     <span>${money.format(order.totalAmount)}</span>
   </div>
 
   <div class="sum-row">
-    <span>Thanh toán:</span>
+    <span>Thanh toĂ¡n:</span>
     <strong>${paymentLabel}</strong>
   </div>
 
   <div class="divider"></div>
   <div class="footer">${footerText}</div>
+</body>
+</html>`;
+
+  printHtmlDocument(html);
+}
+
+export type PrintableRefundData = {
+  id: string;
+  orderCreatedAt?: string;
+  refundedAt?: string;
+  tableCode?: string | null;
+  source?: string;
+  totalAmount: number;
+  refundMethod?: string;
+  refundReason?: string;
+  cashierName?: string;
+  storeName?: string;
+  storeAddress?: string;
+  storePhone?: string;
+  items: Array<{
+    productName: string;
+    variantName?: string;
+    quantity: number;
+    lineTotal: number;
+  }>;
+};
+
+export function printRefundReceipt(refund: PrintableRefundData) {
+  const shortId = refund.id.slice(0, 8).toUpperCase();
+  const timeStr = refund.refundedAt
+    ? new Date(refund.refundedAt).toLocaleString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })
+    : new Date().toLocaleString('vi-VN');
+
+  const storeTitle = escapeHtml(refund.storeName || 'CHICK RES SYSTEM');
+  const addressLine = refund.storeAddress ? `<div class="sub">${escapeHtml(refund.storeAddress)}</div>` : '';
+  const phoneLine = refund.storePhone ? `<div class="sub">Hotline: ${escapeHtml(refund.storePhone)}</div>` : '';
+
+  const itemsHtml = refund.items
+    .map((item) => {
+      const variantPart = item.variantName ? ` (${escapeHtml(item.variantName)})` : '';
+      return `
+        <tr>
+          <td class="col-name">${escapeHtml(item.productName)}${variantPart}</td>
+          <td class="col-qty">${item.quantity}</td>
+          <td class="col-price">${money.format(item.lineTotal)}</td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Phiáº¿u hoĂ n tiá»n #${shortId}</title>
+  <style>
+    @page { size: 80mm auto; margin: 4mm 4mm 6mm 4mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      font-size: 11px;
+      line-height: 1.35;
+      color: #000;
+      margin: 0;
+      padding: 0;
+    }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    .bold { font-weight: 700; }
+    .brand { font-size: 14px; font-weight: 900; text-transform: uppercase; margin-bottom: 2px; }
+    .title {
+      font-size: 13px;
+      font-weight: 900;
+      text-transform: uppercase;
+      margin: 6px 0 3px;
+      letter-spacing: 0.05em;
+      border: 1px dashed #000;
+      padding: 3px;
+    }
+    .sub { font-size: 10px; color: #222; }
+    .sep { border-top: 1px dashed #000; margin: 6px 0; }
+    .double-sep { border-top: 2px solid #000; margin: 6px 0; }
+    .meta-row { display: flex; justify-content: space-between; font-size: 10.5px; margin: 1px 0; }
+    table { width: 100%; border-collapse: collapse; margin: 4px 0; font-size: 10.5px; }
+    th { border-bottom: 1px solid #000; padding: 3px 0; text-align: left; font-size: 10px; font-weight: 700; }
+    td { padding: 3px 0; vertical-align: top; }
+    .col-name { width: 62%; }
+    .col-qty { width: 12%; text-align: center; font-weight: 700; }
+    .col-price { width: 26%; text-align: right; font-weight: 700; font-family: monospace; }
+    .sum-row { display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; margin: 3px 0; }
+    .signatures {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 12px;
+      padding-top: 6px;
+      text-align: center;
+      font-size: 10px;
+    }
+    .sig-col { width: 45%; }
+    .sig-space { height: 35px; }
+    .footer { font-size: 9px; text-align: center; margin-top: 10px; font-style: italic; }
+  </style>
+</head>
+<body>
+  <div class="text-center">
+    <div class="brand">${storeTitle}</div>
+    ${addressLine}
+    ${phoneLine}
+    <div class="title">PHIáº¾U HOĂ€N TIá»€N Máº¶T</div>
+    <div class="sub">MĂ£ Ä‘Æ¡n gá»‘c: #${shortId} ${refund.tableCode ? `â€¢ BĂ n ${escapeHtml(refund.tableCode)}` : ''}</div>
+  </div>
+
+  <div class="sep"></div>
+  <div class="meta-row"><span>Thá»i gian hoĂ n:</span><span>${timeStr}</span></div>
+  <div class="meta-row"><span>HĂ¬nh thá»©c hoĂ n:</span><span class="bold">${escapeHtml(refund.refundMethod || 'Tiá»n máº·t (Cash)')}</span></div>
+  ${refund.refundReason ? `<div class="meta-row"><span>LĂ½ do hoĂ n:</span><span class="bold">${escapeHtml(refund.refundReason)}</span></div>` : ''}
+  <div class="sep"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th class="col-name">MĂ³n huá»· hoĂ n láº¡i</th>
+        <th class="col-qty">SL</th>
+        <th class="col-price">Tiá»n</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemsHtml}
+    </tbody>
+  </table>
+
+  <div class="double-sep"></div>
+  <div class="sum-row">
+    <span>TIá»€N Máº¶T TRáº¢ Láº I:</span>
+    <span>${money.format(refund.totalAmount)}</span>
+  </div>
+  <div class="double-sep"></div>
+
+  <div class="signatures">
+    <div class="sig-col">
+      <div class="bold">KhĂ¡ch nháº­n tiá»n</div>
+      <div class="sub">(KĂ½ & ghi rĂµ há» tĂªn)</div>
+      <div class="sig-space"></div>
+    </div>
+    <div class="sig-col">
+      <div class="bold">Thu ngĂ¢n chi tiá»n</div>
+      <div class="sub">(KĂ½ & ghi rĂµ há» tĂªn)</div>
+      <div class="sig-space"></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Chá»©ng tá»« chi tiá»n máº·t hoĂ n Ä‘Æ¡n Chick Res â€¢ LÆ°u váº¿t kiá»ƒm toĂ¡n kĂ©t ca
+  </div>
 </body>
 </html>`;
 
@@ -360,7 +520,7 @@ export function printTableQrCard(params: {
 <html lang="vi">
 <head>
   <meta charset="utf-8" />
-  <title>Mã QR ${escapeHtml(params.tableCode)}</title>
+  <title>MĂ£ QR ${escapeHtml(params.tableCode)}</title>
   <style>
     @page {
       size: 80mm auto;
@@ -415,7 +575,7 @@ export function printTableQrCard(params: {
     <div class="table-title">${escapeHtml(params.tableCode)}</div>
     <div class="table-sub">${escapeHtml(params.tableName)}</div>
     <img src="${params.qrDataUrl}" alt="QR ${escapeHtml(params.tableCode)}" />
-    <div class="guide">Quét mã QR bằng Camera hoặc Zalo để xem thực đơn & gọi món tại bàn</div>
+    <div class="guide">QuĂ©t mĂ£ QR báº±ng Camera hoáº·c Zalo Ä‘á»ƒ xem thá»±c Ä‘Æ¡n & gá»i mĂ³n táº¡i bĂ n</div>
   </div>
 </body>
 </html>`;

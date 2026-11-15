@@ -10,6 +10,8 @@ import {
   Briefcase,
   CreditCard,
   ChefHat,
+  Package,
+  Building2,
   Lock,
   Mail,
   CheckCircle2,
@@ -25,32 +27,58 @@ const QUICK_PASSWORD = process.env.NEXT_PUBLIC_DEMO_PASSWORD || 'ChickResDev!202
 
 const QUICK_ACCOUNTS = [
   {
-    role: 'Super Admin',
-    description: 'Toàn quyền hệ thống & đa chi nhánh',
+    role: 'Chủ chuỗi (Super Admin)',
+    scopeLabel: 'Toàn chuỗi (2 chi nhánh)',
+    description: 'Xem tổng quan chuỗi, chuyển đổi chi nhánh, thêm Menu/BOM toàn hệ thống',
     email: 'superadmin@chickres.local',
     icon: ShieldCheck,
-    badge: 'ADMIN',
+    badge: 'SUPER ADMIN',
+    badgeClass: 'bg-indigo-100 text-indigo-800',
   },
   {
-    role: 'Quản lý cửa hàng',
-    description: 'Thực đơn, kho, báo cáo, khuyến mãi',
+    role: 'Quản lý Chi nhánh Quận 1',
+    scopeLabel: 'Chỉ cơ sở Quận 1 (Flagship)',
+    description: 'Quản lý thực đơn cục bộ, kho, bàn, báo cáo & nhân sự tại Quận 1',
     email: 'manager@chickres.local',
     icon: Briefcase,
-    badge: 'MANAGER',
+    badge: 'MANAGER Q1',
+    badgeClass: 'bg-amber-100 text-amber-800',
   },
   {
-    role: 'Thu ngân (POS)',
-    description: 'Mở ca, bán hàng tại quầy, thu tiền',
+    role: 'Quản lý Chi nhánh Quận 7',
+    scopeLabel: 'Chỉ cơ sở Quận 7 (Phú Mỹ Hưng)',
+    description: 'Quản lý thực đơn cục bộ, kho, bàn, báo cáo & nhân sự tại Quận 7',
+    email: 'manager.q7@chickres.local',
+    icon: Building2,
+    badge: 'MANAGER Q7',
+    badgeClass: 'bg-emerald-100 text-emerald-800',
+  },
+  {
+    role: 'Thu ngân Quầy (POS)',
+    scopeLabel: 'Cơ sở Quận 1',
+    description: 'Mở ca, bán hàng tại quầy Touch POS, thu tiền, đặt bàn',
     email: 'cashier@chickres.local',
     icon: CreditCard,
     badge: 'CASHIER',
+    badgeClass: 'bg-sky-100 text-sky-800',
   },
   {
     role: 'Điều phối Bếp (KDS)',
-    description: 'Trạm chiên gà, đóng gói, trả món',
+    scopeLabel: 'Cơ sở Quận 1',
+    description: 'Màn hình bếp KDS trạm chiên gà, đóng gói, trả món',
     email: 'kitchen@chickres.local',
     icon: ChefHat,
     badge: 'KITCHEN',
+    badgeClass: 'bg-orange-100 text-orange-800',
+  },
+  {
+    role: 'Thủ kho & Kiểm kê',
+    scopeLabel: 'Cơ sở Quận 1',
+    description: 'Nhập kho theo lô, kiểm kê, điều chuyển nội bộ, xuất hủy',
+    email: 'inventory@chickres.local',
+    icon: Package,
+    badge: 'INVENTORY',
+    badgeClass: 'bg-purple-100 text-purple-800',
   },
 ];
 
@@ -95,13 +123,13 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen w-full flex flex-col justify-center bg-gradient-to-br from-amber-50/70 via-slate-50 to-orange-50/40 font-sans px-4 sm:px-8 lg:px-14 xl:px-20 py-8">
-      <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center">
-        {/* Left Column: Brand Hero & 4 Quick Accounts */}
-        <div className="lg:col-span-7 space-y-6">
+      <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
+        {/* Left Column: Brand Hero & 6 Quick Accounts */}
+        <div className="lg:col-span-7 space-y-5">
           <div className="space-y-3">
             <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-amber-100/80 border border-amber-200 text-amber-900 text-xs font-bold">
               <Flame className="size-4 text-amber-600 fill-amber-500" />
-              <span>Hệ thống Điều hành Nhà hàng Gà Rán Thông minh</span>
+              <span>Hệ thống Điều hành Chuỗi Nhà hàng Gà Rán Đa Chi Nhánh</span>
             </div>
             <div className="flex items-center gap-3.5">
               <div className="inline-flex items-center justify-center size-13 rounded-2xl bg-amber-500 text-white shadow-lg shadow-amber-500/25 ring-4 ring-amber-100 shrink-0">
@@ -112,25 +140,25 @@ export default function LoginPage() {
                   Chick Res System
                 </h1>
                 <p className="text-sm text-slate-600 font-medium mt-0.5">
-                  Đồng bộ thời gian thực: Quầy POS • Bếp KDS • Kho BOM • Đa chi nhánh
+                  Đồng bộ thời gian thực: Chủ chuỗi HQ • Quản lý Chi nhánh • POS • KDS • Kho BOM
                 </p>
               </div>
             </div>
           </div>
 
-          {/* 4 Quick Accounts Grid */}
-          <div className="bg-white/90 backdrop-blur-xs border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-md space-y-3.5">
+          {/* 6 Quick Accounts Grid */}
+          <div className="bg-white/95 backdrop-blur-xs border border-slate-200/90 rounded-2xl p-5 sm:p-6 shadow-md space-y-3.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-sm font-bold text-slate-900">
-                  4 Tài khoản phân quyền thao tác nhanh
+                  6 Tài khoản phân quyền chuẩn theo Chuỗi & Chi nhánh
                 </h2>
                 <p className="text-xs text-slate-500">
-                  Chọn nhanh vai trò để kiểm thử hoặc vận hành theo ca trực
+                  Mật khẩu mặc định chung: <code className="font-mono font-bold text-slate-700">{QUICK_PASSWORD}</code>
                 </p>
               </div>
               <span className="text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
-                Click chọn • Nhấp đúp vào thẳng
+                Click chọn • Nhấp đúp đăng nhập ngay
               </span>
             </div>
 
@@ -150,8 +178,8 @@ export default function LoginPage() {
                         : 'border-slate-200 bg-slate-50/60 text-slate-700 hover:bg-white hover:border-amber-300 hover:shadow-2xs'
                     }`}
                   >
-                    <div className="flex items-center justify-between w-full mb-1.5">
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between w-full mb-1">
+                      <div className="flex items-center gap-2 min-w-0">
                         <div
                           className={`size-8 rounded-lg flex items-center justify-center shrink-0 ${
                             isSelected
@@ -161,22 +189,36 @@ export default function LoginPage() {
                         >
                           <Icon className="size-4" />
                         </div>
-                        <span className="text-sm font-bold text-slate-900">{acc.role}</span>
+                        <div className="min-w-0">
+                          <span className="text-xs sm:text-sm font-bold text-slate-900 block truncate">
+                            {acc.role}
+                          </span>
+                          <span className="text-[10px] font-semibold text-slate-500 block truncate">
+                            Phạm vi: {acc.scopeLabel}
+                          </span>
+                        </div>
                       </div>
                       {isSelected ? (
                         <CheckCircle2 className="size-4 text-amber-600 shrink-0" />
                       ) : (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-600">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${acc.badgeClass}`}
+                        >
                           {acc.badge}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-600 leading-relaxed mb-1.5">
+                    <p className="text-[11px] text-slate-600 leading-relaxed mb-1.5">
                       {acc.description}
                     </p>
-                    <span className="text-xs font-medium text-amber-700 truncate w-full">
-                      {acc.email}
-                    </span>
+                    <div className="flex items-center justify-between w-full pt-1 border-t border-slate-200/60">
+                      <span className="text-xs font-mono font-semibold text-amber-700 truncate">
+                        {acc.email}
+                      </span>
+                      <span className="text-[10px] font-semibold text-slate-400">
+                        Nhấp đúp →
+                      </span>
+                    </div>
                   </button>
                 );
               })}
@@ -192,7 +234,7 @@ export default function LoginPage() {
                 Đăng nhập phiên làm việc
               </CardTitle>
               <CardDescription className="text-xs sm:text-sm text-slate-500 mt-1">
-                Nhập tài khoản nhân sự đã được cấp quyền hoặc chọn nhanh ở bảng bên trái
+                Chọn nhanh vai trò bên trái hoặc nhập tài khoản nhân sự đã được cấp quyền
               </CardDescription>
             </CardHeader>
 
@@ -266,7 +308,7 @@ export default function LoginPage() {
 
               <div className="pt-4 border-t border-slate-100 text-center">
                 <p className="text-xs text-slate-400">
-                  Hệ thống Quản trị Nhà hàng Gà Rán Chick Res • Bảo mật RBAC & Audit Log
+                  Hệ thống Quản trị Nhà hàng Gà Rán Chick Res • Phân quyền Đa Chi Nhánh (RBAC)
                 </p>
               </div>
             </CardContent>

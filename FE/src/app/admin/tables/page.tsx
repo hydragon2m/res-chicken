@@ -238,6 +238,21 @@ export default function TablesManagementPage() {
   };
 
   const handleChangeTableStatus = async (tableId: string, status: Table['status']) => {
+    // Client-side guard: Prevent changing to AVAILABLE or RESERVED if table has unpaid orders
+    if (status === 'AVAILABLE' || status === 'RESERVED') {
+      const targetTable = tables.find((t) => t.id === tableId);
+      const unpaidOrders = (targetTable?.orders || []).filter(
+        (o) => o.status === 'AWAITING_PAYMENT',
+      );
+      if (unpaidOrders.length > 0) {
+        toast.error(
+          `Bàn ${targetTable?.code ?? ''} đang có ${unpaidOrders.length} hóa đơn chưa thanh toán. Vui lòng thanh toán hoặc hủy đơn trước!`,
+        );
+        setOrdersTableId(tableId);
+        return;
+      }
+    }
+
     try {
       await apiRequest(`/tables/${tableId}/status`, {
         method: 'PATCH',
@@ -257,6 +272,26 @@ export default function TablesManagementPage() {
   ) => {
     try {
       const chosenTableId = explicitTableId ?? assignTableMap[id];
+
+      // Client-side guard: Prevent completing (or cancelling while seated) if table has unpaid orders
+      if (status === 'COMPLETED' || status === 'CANCELLED') {
+        const res = reservations.find((r) => r.id === id);
+        const targetTid = chosenTableId ?? res?.tableId;
+        if (targetTid && (status === 'COMPLETED' || res?.status === 'SEATED')) {
+          const targetTable = tables.find((t) => t.id === targetTid);
+          const unpaidOrders = (targetTable?.orders || []).filter(
+            (o) => o.status === 'AWAITING_PAYMENT',
+          );
+          if (unpaidOrders.length > 0) {
+            toast.error(
+              `Bàn ${targetTable?.code ?? ''} đang có ${unpaidOrders.length} hóa đơn chưa thanh toán. Vui lòng thanh toán hóa đơn của khách trước khi đóng bàn!`,
+            );
+            setOrdersTableId(targetTid);
+            return;
+          }
+        }
+      }
+
       await apiRequest(`/reservations/${id}/status`, {
         method: 'PATCH',
         body: JSON.stringify({
@@ -711,44 +746,65 @@ export default function TablesManagementPage() {
 
                           <div className="space-y-2 pt-2 border-t border-slate-100">
                             {/* Quick status switch */}
-                            <div className="grid grid-cols-3 gap-1">
-                              <button
-                                type="button"
-                                disabled={t.status === 'AVAILABLE'}
-                                onClick={() => void handleChangeTableStatus(t.id, 'AVAILABLE')}
-                                className={`py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
-                                  t.status === 'AVAILABLE'
-                                    ? 'bg-emerald-600 text-white'
-                                    : 'bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700'
-                                }`}
-                              >
-                                Trống
-                              </button>
-                              <button
-                                type="button"
-                                disabled={t.status === 'OCCUPIED'}
-                                onClick={() => void handleChangeTableStatus(t.id, 'OCCUPIED')}
-                                className={`py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
-                                  t.status === 'OCCUPIED'
-                                    ? 'bg-rose-600 text-white'
-                                    : 'bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700'
-                                }`}
-                              >
-                                Có khách
-                              </button>
-                              <button
-                                type="button"
-                                disabled={t.status === 'RESERVED'}
-                                onClick={() => void handleChangeTableStatus(t.id, 'RESERVED')}
-                                className={`py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
-                                  t.status === 'RESERVED'
-                                    ? 'bg-amber-500 text-white'
-                                    : 'bg-slate-100 hover:bg-amber-50 text-slate-600 hover:text-amber-700'
-                                }`}
-                              >
-                                Giữ bàn
-                              </button>
-                            </div>
+                            {(() => {
+                              const hasUnpaid = (t.orders || []).some(
+                                (o) => o.status === 'AWAITING_PAYMENT',
+                              );
+                              return (
+                                <div className="grid grid-cols-3 gap-1">
+                                  <button
+                                    type="button"
+                                    disabled={t.status === 'AVAILABLE'}
+                                    onClick={() => void handleChangeTableStatus(t.id, 'AVAILABLE')}
+                                    title={
+                                      hasUnpaid
+                                        ? 'Bàn đang có đơn chưa thanh toán - không thể trả bàn trống!'
+                                        : undefined
+                                    }
+                                    className={`py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                                      t.status === 'AVAILABLE'
+                                        ? 'bg-emerald-600 text-white'
+                                        : hasUnpaid
+                                          ? 'bg-slate-100 text-slate-400 hover:bg-rose-50 hover:text-rose-600'
+                                          : 'bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700'
+                                    }`}
+                                  >
+                                    {hasUnpaid && t.status !== 'AVAILABLE' ? '🔒 Trống' : 'Trống'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={t.status === 'OCCUPIED'}
+                                    onClick={() => void handleChangeTableStatus(t.id, 'OCCUPIED')}
+                                    className={`py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                                      t.status === 'OCCUPIED'
+                                        ? 'bg-rose-600 text-white'
+                                        : 'bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-700'
+                                    }`}
+                                  >
+                                    Có khách
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={t.status === 'RESERVED'}
+                                    onClick={() => void handleChangeTableStatus(t.id, 'RESERVED')}
+                                    title={
+                                      hasUnpaid
+                                        ? 'Bàn đang có đơn chưa thanh toán - không thể đổi sang đặt trước!'
+                                        : undefined
+                                    }
+                                    className={`py-1 rounded-md text-[11px] font-bold transition-colors cursor-pointer ${
+                                      t.status === 'RESERVED'
+                                        ? 'bg-amber-500 text-white'
+                                        : hasUnpaid
+                                          ? 'bg-slate-100 text-slate-400 hover:bg-rose-50 hover:text-rose-600'
+                                          : 'bg-slate-100 hover:bg-amber-50 text-slate-600 hover:text-amber-700'
+                                    }`}
+                                  >
+                                    {hasUnpaid && t.status !== 'RESERVED' ? '🔒 Giữ bàn' : 'Giữ bàn'}
+                                  </button>
+                                </div>
+                              );
+                            })()}
 
                             {/* Bottom actions: QR + Filter History */}
                             <div className="flex items-center justify-between gap-1.5 pt-1">

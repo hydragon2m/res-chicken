@@ -86,29 +86,33 @@ export function TableOrdersSummary({
     <button
       type="button"
       onClick={onOpen}
-      className="w-full text-left p-2 rounded-lg bg-white border border-rose-200 hover:border-rose-400 text-[11px] space-y-1 cursor-pointer transition-colors"
+      className="w-full text-left p-2 rounded-xl bg-slate-50/80 border border-slate-200/90 hover:border-orange-300 hover:bg-orange-50/40 text-[11px] space-y-1.5 cursor-pointer transition-colors shadow-2xs"
     >
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-bold text-slate-900 inline-flex items-center gap-1">
-          <ReceiptText className="size-3.5 text-rose-600" />
-          {s.count} đơn • {money.format(s.total)}
+      <div className="flex items-center justify-between gap-1 text-[11px]">
+        <span className="font-extrabold text-slate-800 inline-flex items-center gap-1">
+          <ReceiptText className="size-3.5 text-orange-600 shrink-0" />
+          <span>
+            {s.count} đơn • {money.format(s.total)}
+          </span>
         </span>
-        <span className="text-rose-700 font-bold underline-offset-2 hover:underline">Xem đơn</span>
+        <span className="text-[10px] text-orange-700 font-bold hover:underline shrink-0">
+          Xem đơn →
+        </span>
       </div>
       <div className="flex flex-wrap gap-1">
         {s.unpaidCount > 0 && (
-          <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-700 font-bold">
+          <span className="px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-700 font-bold text-[10px] border border-rose-200">
             Chưa thu {money.format(s.unpaidTotal)}
           </span>
         )}
         {s.inKitchenCount > 0 && (
-          <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 font-bold">
-            {s.inKitchenCount} đơn đang ở bếp
+          <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 font-bold text-[10px] border border-amber-200">
+            {s.inKitchenCount} đơn ở bếp
           </span>
         )}
         {s.readyCount > 0 && (
-          <span className="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 font-bold">
-            {s.readyCount} đơn chờ mang ra
+          <span className="px-1.5 py-0.5 rounded-md bg-violet-50 text-violet-700 font-bold text-[10px] border border-violet-200">
+            {s.readyCount} đơn chờ lấy
           </span>
         )}
       </div>

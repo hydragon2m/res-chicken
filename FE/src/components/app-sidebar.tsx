@@ -20,6 +20,8 @@ import {
   SlidersHorizontal,
   ExternalLink,
   CheckCircle2,
+  Building2,
+  ArrowLeftRight,
 } from 'lucide-react';
 
 import {
@@ -103,6 +105,40 @@ export function AppSidebar({ actor }: { actor: Actor }) {
 
       {/* Navigation Groups */}
       <SidebarContent className="px-2 py-3 space-y-4">
+        {/* Group: Super Admin Chain Command Center */}
+        {actor.isPlatformAdmin &&
+          matchesSearch('Chuỗi Đa chi nhánh Tổng quan chuỗi Đồng bộ Luân chuyển kho Super Admin') && (
+            <SidebarGroup>
+              <SidebarGroupLabel className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider px-2 mb-1">
+                QUẢN TRỊ CHUỖI (SUPER ADMIN)
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu className="space-y-0.5">
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive={pathname.startsWith('/admin/chain')}>
+                      <Link
+                        href="/admin/chain"
+                        className={`flex items-center justify-between w-full px-2.5 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                          pathname.startsWith('/admin/chain')
+                            ? 'bg-indigo-50 text-indigo-950 border-r-2 border-indigo-600 font-bold'
+                            : 'text-slate-800 bg-indigo-50/40 hover:bg-indigo-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Building2 className="size-4 text-indigo-600" />
+                          <span>Tổng quan & Đồng bộ Chuỗi</span>
+                        </div>
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800">
+                          HQ
+                        </span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          )}
+
         {/* Group: Dashboards & Operations */}
         <SidebarGroup>
           <SidebarGroupLabel className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1">
@@ -408,20 +444,24 @@ export function AppSidebar({ actor }: { actor: Actor }) {
                     {inventoryOpen && (
                       <SidebarMenuSub className="ml-5 pl-2.5 border-l border-slate-200/80 space-y-1 my-1">
                         {[
-                          { key: 'stock', label: '1. Tồn kho & Cảnh báo' },
-                          { key: 'receive', label: '2. Nhập kho theo lô' },
-                          { key: 'move', label: '3. Xuất · Kiểm kê · Hủy' },
-                          { key: 'ledger', label: '4. Sổ cái Thẻ kho' },
-                          { key: 'recipes', label: '5. Định mức món (BOM)' },
-                          { key: 'setup', label: '6. Nguyên liệu & Vị trí' },
+                          { href: '/admin/inventory/stock', key: 'stock', label: '1. Tồn kho & Cảnh báo' },
+                          { href: '/admin/inventory/receive', key: 'receive', label: '2. Nhập kho theo lô' },
+                          { href: '/admin/inventory/transfer', key: 'transfer', label: '3. Điều chuyển nội bộ' },
+                          { href: '/admin/inventory/audit', key: 'audit', label: '4. Kiểm kê & Cân kho' },
+                          { href: '/admin/inventory/waste', key: 'waste', label: '5. Xuất hủy & Hao hụt' },
+                          { href: '/admin/inventory/ledger', key: 'ledger', label: '6. Sổ cái Thẻ kho' },
+                          { href: '/admin/inventory/recipes', key: 'recipes', label: '7. Định mức món (BOM)' },
+                          { href: '/admin/inventory/ingredients', key: 'ingredients', label: '8. Nguyên liệu & Vị trí' },
+                          { href: '/admin/inventory/suppliers', key: 'suppliers', label: '9. Nhà cung cấp' },
                         ].map((sub) => {
                           const isActive =
-                            pathname === '/admin/inventory' && currentInvTab === sub.key;
+                            pathname === sub.href ||
+                            (pathname === '/admin/inventory' && (currentInvTab === sub.key || (sub.key === 'stock' && !searchParams.get('tab'))));
                           return (
                             <SidebarMenuSubItem key={sub.key}>
                               <SidebarMenuSubButton asChild isActive={isActive}>
                                 <Link
-                                  href={`/admin/inventory?tab=${sub.key}`}
+                                  href={sub.href}
                                   className={`flex items-center gap-2 text-xs py-1.5 px-2 rounded-md transition-colors ${
                                     isActive
                                       ? 'bg-amber-50 text-amber-900 font-bold border-r-2 border-amber-500'

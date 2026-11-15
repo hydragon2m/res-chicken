@@ -1,9 +1,24 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { CurrentUser } from '../identity/decorators/current-user.decorator.js';
 import { Public } from '../identity/decorators/public.decorator.js';
 import { RequirePermissions } from '../identity/decorators/require-permissions.decorator.js';
 import type { AuthenticatedUser } from '../identity/types/authenticated-user.js';
-import { CreateCashRegisterDto, CreateStoreDto } from './dto/create-store.dto.js';
+import {
+  CreateCashRegisterDto,
+  CreateStoreDto,
+  InterStoreTransferDto,
+  SyncStoreDataDto,
+  UpdateStoreDto,
+} from './dto/create-store.dto.js';
 import { StoresService } from './stores.service.js';
 
 @Controller('stores')
@@ -17,6 +32,15 @@ export class StoresController {
   }
 
   @RequirePermissions('platform.stores.manage')
+  @Get('chain-overview')
+  chainOverview(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Query('range') range?: string,
+  ) {
+    return this.stores.chainOverview(actor, range);
+  }
+
+  @RequirePermissions('platform.stores.manage')
   @Get()
   list(@CurrentUser() actor: AuthenticatedUser) {
     return this.stores.list(actor);
@@ -26,6 +50,31 @@ export class StoresController {
   @Post()
   create(@CurrentUser() actor: AuthenticatedUser, @Body() dto: CreateStoreDto) {
     return this.stores.create(actor, dto);
+  }
+
+  @RequirePermissions('platform.stores.manage')
+  @Patch(':storeId')
+  update(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Param('storeId', new ParseUUIDPipe()) storeId: string,
+    @Body() dto: UpdateStoreDto,
+  ) {
+    return this.stores.update(actor, storeId, dto);
+  }
+
+  @RequirePermissions('platform.stores.manage')
+  @Post('sync')
+  syncData(@CurrentUser() actor: AuthenticatedUser, @Body() dto: SyncStoreDataDto) {
+    return this.stores.syncStoreData(actor, dto);
+  }
+
+  @RequirePermissions('platform.stores.manage')
+  @Post('inter-transfer')
+  interStoreTransfer(
+    @CurrentUser() actor: AuthenticatedUser,
+    @Body() dto: InterStoreTransferDto,
+  ) {
+    return this.stores.interStoreTransfer(actor, dto);
   }
 
   @RequirePermissions('settings.manage')

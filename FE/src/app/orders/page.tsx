@@ -23,7 +23,7 @@ import {
 import { toast } from 'sonner';
 import { AccessDenied } from '../../components/access-denied';
 import { ApiError, apiRequest, getActor, type Actor } from '../../lib/auth';
-import { printOrderReceipt } from '../../lib/print-receipt';
+import { printOrderReceipt, printRefundReceipt } from '../../lib/print-receipt';
 import { useActiveStore } from '../../lib/store-context';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -65,7 +65,9 @@ type Order = {
   totalAmount: number;
   voucherCode?: string | null;
   note?: string | null;
+  cancellationNote?: string | null;
   createdAt: string;
+  updatedAt?: string;
   table?: { id: string; code: string; name: string } | null;
   diningTable?: { id: string; code: string; name: string } | null;
   fulfillmentTicket?: FulfillmentTicket | null;
@@ -77,7 +79,14 @@ type Order = {
     lineTotal: number;
     optionsSnapshot: { name: string }[];
   }[];
-  payments: { id: string; method: string; amount: number; status: string }[];
+  payments: {
+    id: string;
+    method: string;
+    amount: number;
+    status: string;
+    refundedAt?: string | null;
+    refundNote?: string | null;
+  }[];
 };
 
 const money = new Intl.NumberFormat('vi-VN', {
@@ -190,6 +199,8 @@ export default function OrdersPage() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+  const [refundReason, setRefundReason] = useState('');
+  const [refundMethod, setRefundMethod] = useState<'CASH' | 'ORIGINAL'>('CASH');
 
   const load = useCallback(async (id: string) => {
     if (!id) return;
@@ -299,17 +310,50 @@ export default function OrdersPage() {
   const handleRefundOrder = async () => {
     if (!selected) return;
     const payment = selected.payments[0];
-    if (!payment) return;
+    if (!payment) {
+      toast.error('Đơn hàng không có dữ liệu thanh toán để hoàn tiền.');
+      return;
+    }
+    if (!refundReason.trim()) {
+      toast.warning('Vui lòng nhập lý do huỷ & hoàn tiền.');
+      return;
+    }
     setBusy(true);
     try {
       await apiRequest<{ order: Order }>(`/payments/${payment.id}/refund`, {
         method: 'POST',
         headers: { 'Idempotency-Key': crypto.randomUUID() },
-        body: JSON.stringify({ note: `Hoàn tiền theo yêu cầu cho đơn ${selected.id}` }),
+        body: JSON.stringify({
+          note: refundReason.trim(),
+          refundMethod: refundMethod === 'CASH' ? 'CASH' : undefined,
+        }),
       });
       await load(storeId);
       setRefundDialogOpen(false);
-      toast.success('Đã hoàn tiền đơn hàng.');
+      toast.success(
+        refundMethod === 'CASH'
+          ? `Đã hoàn trả ${money.format(selected.totalAmount)} tiền mặt cho khách.`
+          : 'Đã hoàn tiền đơn hàng thành công.',
+      );
+
+      // In phiếu hoàn tiền mặt
+      printRefundReceipt({
+        id: selected.id,
+        orderCreatedAt: selected.createdAt,
+        refundedAt: new Date().toISOString(),
+        tableCode: (selected.table ?? selected.diningTable)?.code ?? null,
+        source: selected.source,
+        totalAmount: selected.totalAmount,
+        refundMethod: refundMethod === 'CASH' ? 'Tiền mặt (Chi từ ca)' : 'Theo phương thức gốc',
+        refundReason: refundReason.trim(),
+        storeName: currentStore?.name,
+        items: selected.items.map((it) => ({
+          productName: it.productName,
+          variantName: it.variantName,
+          quantity: it.quantity,
+          lineTotal: it.lineTotal,
+        })),
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Không thể hoàn tiền.');
     } finally {
@@ -962,7 +1006,10 @@ export default function OrdersPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCancelDialogOpen(true)}
+                    onClick={() => {
+                      setCancelReason('');
+                      setCancelDialogOpen(true);
+                    }}
                     className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer"
                   >
                     <Ban className="size-3.5 mr-1" />
@@ -974,12 +1021,57 @@ export default function OrdersPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setRefundDialogOpen(true)}
-                    className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer"
+                    onClick={() => {
+                      setRefundReason('');
+                      setRefundMethod('CASH');
+                      setRefundDialogOpen(true);
+                    }}
+                    className="text-xs text-rose-600 border-rose-200 hover:bg-rose-50 cursor-pointer font-bold inline-flex items-center gap-1.5"
                   >
-                    <RotateCcw className="size-3.5 mr-1" />
-                    <span>Hoàn tiền đơn này</span>
+                    <RotateCcw className="size-3.5" />
+                    <span>Huỷ & Hoàn tiền mặt</span>
                   </Button>
+                )}
+
+                {selected.status === 'REFUNDED' && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      printRefundReceipt({
+                        id: selected.id,
+                        orderCreatedAt: selected.createdAt,
+                        refundedAt: selected.payments[0]?.refundedAt ?? selected.updatedAt,
+                        tableCode: (selected.table ?? selected.diningTable)?.code ?? null,
+                        source: selected.source,
+                        totalAmount: selected.totalAmount,
+                        refundMethod: 'Tiền mặt (Chi từ ca)',
+                        refundReason: selected.payments[0]?.refundNote ?? 'Hoàn tiền huỷ đơn',
+                        storeName: currentStore?.name,
+                        items: selected.items.map((it) => ({
+                          productName: it.productName,
+                          variantName: it.variantName,
+                          quantity: it.quantity,
+                          lineTotal: it.lineTotal,
+                        })),
+                      });
+                    }}
+                    className="text-xs text-slate-700 border-slate-200 hover:bg-slate-100 cursor-pointer inline-flex items-center gap-1.5 font-semibold"
+                  >
+                    <Printer className="size-3.5 text-slate-500" />
+                    <span>In phiếu hoàn tiền mặt</span>
+                  </Button>
+                )}
+
+                {selected.status === 'CANCELLED' && (
+                  <div className="w-full p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
+                    <p className="font-bold text-slate-800">Đơn đã huỷ trước khi thu tiền</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Đơn hàng được huỷ khi chưa thanh toán qua hệ thống nên không phát sinh thu/chi
+                      tiền trong ca.
+                      {selected.cancellationNote ? ` (Lý do: ${selected.cancellationNote})` : ''}
+                    </p>
+                  </div>
                 )}
               </div>
             </>
@@ -1026,25 +1118,86 @@ export default function OrdersPage() {
 
       {/* Refund Order Dialog */}
       <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base font-bold">Xác nhận hoàn tiền</DialogTitle>
+            <DialogTitle className="text-base font-bold text-rose-600 flex items-center gap-2">
+              <RotateCcw className="size-4" />
+              <span>Huỷ đơn & Hoàn tiền mặt</span>
+            </DialogTitle>
             <DialogDescription className="text-xs text-slate-500">
-              Bạn có chắc chắn muốn hoàn tiền toàn bộ {money.format(selected?.totalAmount ?? 0)} cho
-              đơn này?
+              Xuất tiền mặt từ két ca làm việc hiện tại để hoàn lại cho khách hàng và huỷ đơn.
             </DialogDescription>
           </DialogHeader>
+
+          <div className="py-2 space-y-3">
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
+              <span className="text-[11px] font-semibold text-amber-800 uppercase block">
+                Số tiền mặt cần chi trả lại khách
+              </span>
+              <span className="text-2xl font-black font-mono text-amber-900">
+                {money.format(selected?.totalAmount ?? 0)}
+              </span>
+              <p className="text-[11px] text-amber-700 mt-1">
+                Giao dịch chi hoàn tiền này sẽ được ghi nhận tự động vào sổ ca thu ngân để đối soát
+                két cuối ca.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">Lý do huỷ & hoàn tiền *</label>
+              <Input
+                placeholder="VD: Khách đổi ý, hết món, làm sai món..."
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                className="text-xs"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">Hình thức hoàn trả</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRefundMethod('CASH')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold text-left cursor-pointer transition-colors ${
+                    refundMethod === 'CASH'
+                      ? 'border-amber-500 bg-amber-50 text-amber-900 ring-2 ring-amber-400/20'
+                      : 'border-slate-200 bg-white text-slate-600'
+                  }`}
+                >
+                  <p className="font-bold">💵 Tiền mặt (Két ca)</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Xuất tiền từ két quầy</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRefundMethod('ORIGINAL')}
+                  className={`p-2.5 rounded-xl border text-xs font-bold text-left cursor-pointer transition-colors ${
+                    refundMethod === 'ORIGINAL'
+                      ? 'border-amber-500 bg-amber-50 text-amber-900 ring-2 ring-amber-400/20'
+                      : 'border-slate-200 bg-white text-slate-600'
+                  }`}
+                >
+                  <p className="font-bold">
+                    🔄 Gốc (
+                    {selected?.payments[0]?.method === 'CASH' ? 'Tiền mặt' : 'VietQR'})
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">Theo kênh thanh toán</p>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <DialogFooter className="gap-2">
             <Button variant="outline" size="sm" onClick={() => setRefundDialogOpen(false)}>
               Bỏ qua
             </Button>
             <Button
               size="sm"
-              disabled={busy}
+              disabled={busy || !refundReason.trim()}
               onClick={() => void handleRefundOrder()}
-              className="bg-rose-600 hover:bg-rose-700 text-white"
+              className="bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer"
             >
-              Xác nhận hoàn tiền
+              Xác nhận chi tiền & Huỷ đơn
             </Button>
           </DialogFooter>
         </DialogContent>

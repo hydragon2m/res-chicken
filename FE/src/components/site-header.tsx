@@ -1,13 +1,15 @@
 'use client';
 
+import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Building2, ChevronDown, LogOut, ShieldCheck, UserCheck } from 'lucide-react';
+import { Building2, ChevronDown, Globe, LogOut, ShieldCheck, UserCheck } from 'lucide-react';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { logout, ROLE_LABELS, type Actor } from '@/lib/auth';
 import { useActiveStore } from '@/lib/store-context';
 
 const titles: Record<string, string> = {
   '/admin': 'Bảng Điều Hành Nhà Hàng (Dashboard)',
+  '/admin/chain': 'Trung Tâm Điều Hành Chuỗi & Đồng Bộ Đa Chi Nhánh (HQ)',
   '/admin/reports': 'Báo Cáo Doanh Thu & Vận Hành',
   '/pos': 'Quầy Bán Hàng (Touch POS)',
   '/orders': 'Sổ Đơn Hàng & Thanh Toán',
@@ -28,7 +30,9 @@ export function SiteHeader({ actor }: { actor: Actor }) {
     ? 'Màn Hình Điều Phối Bếp (KDS)'
     : pathname.startsWith('/admin/catalog')
       ? 'Quản Lý Thực Đơn, Món Ăn & Bảng Giá'
-      : (titles[pathname] ?? 'Hệ Thống Quản Trị Chick Res');
+      : pathname.startsWith('/admin/inventory')
+        ? 'Quản Lý Kho, Lô Hàng & Định Mức BOM'
+        : (titles[pathname] ?? 'Hệ Thống Quản Trị Chick Res');
 
   const handleSignOut = async () => {
     await logout();
@@ -88,6 +92,20 @@ export function SiteHeader({ actor }: { actor: Actor }) {
               </div>
             )}
           </div>
+          {actor.isPlatformAdmin && (
+            <Link
+              href="/admin/chain"
+              title="Mở Trung tâm Điều hành Chuỗi & Đồng bộ Đa Chi Nhánh"
+              className={`ml-1 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-bold transition-colors ${
+                pathname.startsWith('/admin/chain')
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200'
+              }`}
+            >
+              <Globe className="size-3" />
+              <span className="hidden xl:inline">Toàn chuỗi</span>
+            </Link>
+          )}
         </div>
 
         <div className="h-6 w-px bg-slate-200 hidden sm:block" />
