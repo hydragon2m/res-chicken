@@ -22,17 +22,19 @@ services:
       context: ./FE
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
     env_file:
-      - ./.env
+      - path: ./.env
+        required: false
     environment:
       PORT: 3000
       HOSTNAME: 0.0.0.0
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3001}
     depends_on:
       backend:
         condition: service_started
     ports:
-      - "${WEB_PORT}:3000"
+      - "${WEB_PORT:-3000}:3000"
     restart: unless-stopped
 
   migrate:
@@ -41,10 +43,11 @@ services:
       dockerfile: Dockerfile
       target: migration
     env_file:
-      - ./.env
+      - path: ./.env
+        required: false
     environment:
       DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql://chick_res:chick_res_local_only@postgres:5432/chick_res?schema=public}
-      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-before-production}
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-before-production-32chars}
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,16 +58,17 @@ services:
       context: ./BE
       dockerfile: Dockerfile
     env_file:
-      - ./.env
+      - path: ./.env
+        required: false
     environment:
       PORT: 3000
       DATABASE_URL: ${DATABASE_URL_DOCKER:-postgresql://chick_res:chick_res_local_only@postgres:5432/chick_res?schema=public}
-      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-before-production}
+      JWT_SECRET: ${JWT_SECRET:-local-development-secret-change-before-production-32chars}
     depends_on:
       migrate:
         condition: service_completed_successfully
     ports:
-      - "${API_PORT}:3000"
+      - "${API_PORT:-3001}:3000"
     restart: unless-stopped
 
   pgadmin:

@@ -1,0 +1,85 @@
+======================================================================
+   HƯỚNG DẪN CHẠY MÃ NGUỒN HỆ THỐNG CHICK RES QSR (DOCKER COMPOSE)
+======================================================================
+
+Toàn bộ hệ thống (PostgreSQL 16 + Tự động tạo bảng/Seed dữ liệu + Backend NestJS 11 + Frontend Next.js 16) đã được đóng gói sẵn trong Docker Compose. Bạn không cần cài đặt Node.js hay PostgreSQL rời trên máy.
+
+----------------------------------------------------------------------
+BƯỚC 1: CÀI ĐẶT CÔNG CỤ CẦN THIẾT
+----------------------------------------------------------------------
+1. Tải và cài đặt Docker Desktop:
+   - Link tải: https://www.docker.com/products/docker-desktop/
+   - Sau khi cài xong, mở ứng dụng Docker Desktop lên và đợi báo "Engine running".
+2. Tải và cài đặt Git (nếu máy chưa có):
+   - Link tải: https://git-scm.com/downloads
+
+----------------------------------------------------------------------
+BƯỚC 2: TẢI MÃ NGUỒN (CLONE GIT)
+----------------------------------------------------------------------
+Mở Terminal (hoặc PowerShell / Command Prompt trên Windows) và chạy lệnh:
+
+   git clone https://github.com/hydragon2m/res-chicken.git
+   cd res-chicken
+
+(Tùy chọn) Tạo file cấu hình .env từ file mẫu (nếu bỏ qua bước này hệ thống vẫn tự dùng cấu hình mặc định):
+   - Trên Windows (CMD/PowerShell):  copy .env.example .env
+   - Trên macOS / Linux (Git Bash):  cp .env.example .env
+
+----------------------------------------------------------------------
+BƯỚC 3: KHỞI CHẠY TOÀN BỘ HỆ THỐNG BẰNG DOCKER COMPOSE
+----------------------------------------------------------------------
+Tại thư mục gốc của dự án (res-chicken), chạy duy nhất 1 lệnh:
+
+   docker compose up -d --build
+
+Lưu ý:
+- Lần chạy đầu tiên sẽ mất khoảng 2 - 4 phút để tải image và build.
+- Hệ thống sẽ tự động chạy theo thứ tự:
+  1. Khởi tạo Database PostgreSQL 16 (cổng 5432)
+  2. Tự động chạy Migration tạo 26 bảng và nạp sẵn dữ liệu 2 chi nhánh + 6 tài khoản mẫu
+  3. Khởi chạy Backend API NestJS (cổng 3001)
+  4. Khởi chạy Frontend Web Next.js (cổng 3000)
+
+----------------------------------------------------------------------
+BƯỚC 4: TRUY CẬP ỨNG DỤNG TRÊN TRÌNH DUYỆT
+----------------------------------------------------------------------
+Sau khi lệnh chạy xong, mở trình duyệt truy cập:
+
+- Trang Đăng nhập (Chọn nhanh 6 vai trò):  http://localhost:3000/login
+- Trung tâm Điều hành Chuỗi (Super Admin): http://localhost:3000/admin/chain
+- Dashboard Phân tích Thị trường:          http://localhost:3000/admin
+- Quầy bán hàng cảm ứng (Touch POS):       http://localhost:3000/pos
+- Màn hình Bếp KDS (Trạm Chiên):           http://localhost:3000/kds/frying
+- Quản lý Bàn & Đặt chỗ:                   http://localhost:3000/admin/tables
+- Quản lý Kho FEFO (9 phân hệ):            http://localhost:3000/admin/inventory/stock
+- Cổng Khách hàng Đặt bàn trực tuyến:      http://localhost:3000/reservations
+- Cổng Khách hàng Săn Voucher:             http://localhost:3000/vouchers
+- Quản trị CSDL trực quan (pgAdmin 4):     http://localhost:5050
+
+----------------------------------------------------------------------
+DANH SÁCH 6 TÀI KHOẢN ĐĂNG NHẬP MẪU (ĐÃ TÍCH HỢP NÚT CHỌN NHANH TRÊN /login)
+----------------------------------------------------------------------
+Mật khẩu chung cho tất cả tài khoản:  ChickResDev!2026
+
+1. Chủ chuỗi (Super Admin - Toàn chuỗi Q1 & Q7):  superadmin@chickres.local
+2. Quản lý Chi nhánh Quận 1 (Flagship):           manager@chickres.local
+3. Quản lý Chi nhánh Quận 7 (Phú Mỹ Hưng):        manager.q7@chickres.local
+4. Thu ngân Quầy POS (Chi nhánh Quận 1):          cashier@chickres.local
+5. Nhân viên Bếp KDS (Chi nhánh Quận 1):          kitchen@chickres.local
+6. Thủ kho & Kiểm kê (Chi nhánh Quận 1):          inventory@chickres.local
+
+----------------------------------------------------------------------
+CÁC LỆNH QUẢN LÝ DOCKER HỮU ÍCH KHÁC
+----------------------------------------------------------------------
+- Xem trạng thái các container đang chạy:
+  docker compose ps
+
+- Xem log trực tiếp của hệ thống:
+  docker compose logs -f
+
+- Tắt hệ thống (giữ nguyên dữ liệu Database):
+  docker compose down
+
+- Tắt hệ thống và xóa sạch dữ liệu để làm mới từ đầu:
+  docker compose down -v
+======================================================================
