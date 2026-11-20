@@ -107,7 +107,7 @@ describe('Reports, Dashboard Metrics, and Store Settings (e2e)', () => {
       .expect(201);
 
     const _shift = await request(app.getHttpServer())
-      .post('/api/v1/shifts/open')
+      .post('/api/v1/ca-lam-viec/open')
       .set({ ...auth, 'idempotency-key': `shift-rep-${randomUUID()}` })
       .send({ storeId, openingCash: 500000 })
       .expect(201);
@@ -129,7 +129,7 @@ describe('Reports, Dashboard Metrics, and Store Settings (e2e)', () => {
 
     // 2. Query Sales Report
     const sales = await request(app.getHttpServer())
-      .get(`/api/v1/reports/sales?storeId=${storeId}`)
+      .get(`/api/v1/bao-cao/sales?storeId=${storeId}`)
       .set(auth)
       .expect(200);
 
@@ -138,7 +138,7 @@ describe('Reports, Dashboard Metrics, and Store Settings (e2e)', () => {
 
     // 3. Query Top Selling
     const topSelling = await request(app.getHttpServer())
-      .get(`/api/v1/reports/top-selling?storeId=${storeId}`)
+      .get(`/api/v1/bao-cao/top-selling?storeId=${storeId}`)
       .set(auth)
       .expect(200);
 
@@ -147,7 +147,7 @@ describe('Reports, Dashboard Metrics, and Store Settings (e2e)', () => {
 
     // 4. Query Dashboard Metrics (real queries matching Shadcn UI Kit)
     const metrics = await request(app.getHttpServer())
-      .get(`/api/v1/reports/dashboard-metrics?storeId=${storeId}`)
+      .get(`/api/v1/bao-cao/dashboard-metrics?storeId=${storeId}`)
       .set(auth)
       .expect(200);
 
@@ -158,7 +158,7 @@ describe('Reports, Dashboard Metrics, and Store Settings (e2e)', () => {
 
     // 5. Export Sales CSV
     const salesCsv = await request(app.getHttpServer())
-      .get(`/api/v1/reports/export/sales?storeId=${storeId}`)
+      .get(`/api/v1/bao-cao/export/sales?storeId=${storeId}`)
       .set(auth)
       .expect(200);
 
@@ -168,7 +168,7 @@ describe('Reports, Dashboard Metrics, and Store Settings (e2e)', () => {
 
     // 6. Test Store Settings update
     const updateSettingsRes = await request(app.getHttpServer())
-      .put(`/api/v1/settings/store/${storeId}`)
+      .put(`/api/v1/cai-dat/store/${storeId}`)
       .set(auth)
       .send({
         phone: '0909999888',

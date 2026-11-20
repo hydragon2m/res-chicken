@@ -1,24 +1,9 @@
 import type { Metadata } from 'next';
-import { Be_Vietnam_Pro, JetBrains_Mono } from 'next/font/google';
 import { Suspense } from 'react';
 import './globals.css';
-import { AppShell } from '../components/app-shell';
-import { StoreProvider } from '../lib/store-context';
-import { Toaster } from '../components/ui/sonner';
-
-const beVietnamPro = Be_Vietnam_Pro({
-  subsets: ['latin', 'vietnamese'],
-  weight: ['400', '500', '600', '700', '800'],
-  variable: '--font-be-vietnam',
-  display: 'swap',
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin', 'vietnamese'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-jetbrains-mono',
-  display: 'swap',
-});
+import { AppShell } from '@/thanh-phan/app-shell';
+import { StoreProvider } from '@/thu-vien/store-context';
+import { Toaster } from '@/thanh-phan/giao-dien/sonner';
 
 export const metadata: Metadata = {
   title: 'Chick Res | Quản trị Nhà hàng Gà Rán',
@@ -27,10 +12,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="vi"
-      className={`${beVietnamPro.variable} ${jetbrainsMono.variable} h-full antialiased`}
-    >
+    <html lang="vi" className="h-full antialiased">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body className="min-h-full flex flex-col font-sans bg-slate-50 text-slate-900 selection:bg-amber-100 selection:text-amber-900">
         <Suspense fallback={null}>
           <StoreProvider>

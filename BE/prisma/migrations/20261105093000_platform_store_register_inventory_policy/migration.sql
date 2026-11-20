@@ -31,7 +31,7 @@ CREATE INDEX IF NOT EXISTS "Shift_registerId_status_idx" ON "Shift"("registerId"
 -- Upgrade existing single-drawer stores without leaving historical shifts
 -- orphaned. PostgreSQL 16 provides gen_random_uuid() natively.
 INSERT INTO "CashRegister" ("id", "storeId", "name", "code")
-SELECT gen_random_uuid(), "id", 'Main register', 'MAIN'
+SELECT gen_random_uuid(), "id", 'Quầy Thu Ngân Chính', 'MAIN'
 FROM "Store" store_row
 WHERE NOT EXISTS (
   SELECT 1

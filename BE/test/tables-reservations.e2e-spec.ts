@@ -187,7 +187,7 @@ describe('Tables, Reservations and QR Self-Order flow (e2e)', () => {
 
     // 5. Customer scans table QR code and fetches menu
     const qrMenuRes = await request(app.getHttpServer())
-      .get(`/api/v1/ordering/table/${qrToken}`)
+      .get(`/api/v1/don-hang/table/${qrToken}`)
       .expect(200);
 
     expect(qrMenuRes.body.table.code).toBe('B-01');
@@ -195,7 +195,7 @@ describe('Tables, Reservations and QR Self-Order flow (e2e)', () => {
 
     // 6. Customer places self-order at the table with Idempotency-Key
     const selfOrderRes = await request(app.getHttpServer())
-      .post(`/api/v1/ordering/table/${qrToken}`)
+      .post(`/api/v1/don-hang/table/${qrToken}`)
       .set({ 'idempotency-key': 'e2e-order-key-initial-001' })
       .send({
         items: [{ variantId, quantity: 2, optionIds: [] }],
@@ -302,7 +302,7 @@ describe('Tables, Reservations and QR Self-Order flow (e2e)', () => {
   it('enforces mandatory Idempotency-Key validation and deduplication on table self-order (RUN-003)', async () => {
     // 1. Missing Idempotency-Key -> 400 Bad Request
     const missingKeyRes = await request(app.getHttpServer())
-      .post(`/api/v1/ordering/table/${qrToken}`)
+      .post(`/api/v1/don-hang/table/${qrToken}`)
       .send({
         items: [{ variantId, quantity: 1, optionIds: [] }],
       })
@@ -312,7 +312,7 @@ describe('Tables, Reservations and QR Self-Order flow (e2e)', () => {
 
     // 2. Short Idempotency-Key (< 8 chars) -> 400 Bad Request
     const shortKeyRes = await request(app.getHttpServer())
-      .post(`/api/v1/ordering/table/${qrToken}`)
+      .post(`/api/v1/don-hang/table/${qrToken}`)
       .set({ 'idempotency-key': 'short' })
       .send({
         items: [{ variantId, quantity: 1, optionIds: [] }],
@@ -324,7 +324,7 @@ describe('Tables, Reservations and QR Self-Order flow (e2e)', () => {
     // 3. Valid Idempotency-Key -> 201 Created
     const stableKey = `e2e-idempotent-key-${Date.now()}`;
     const validOrderRes = await request(app.getHttpServer())
-      .post(`/api/v1/ordering/table/${qrToken}`)
+      .post(`/api/v1/don-hang/table/${qrToken}`)
       .set({ 'idempotency-key': stableKey })
       .send({
         items: [{ variantId, quantity: 1, optionIds: [] }],
@@ -338,7 +338,7 @@ describe('Tables, Reservations and QR Self-Order flow (e2e)', () => {
 
     // 4. Duplicate request with identical key -> 201 Created with exact same orderId (no duplicate order)
     const replayOrderRes = await request(app.getHttpServer())
-      .post(`/api/v1/ordering/table/${qrToken}`)
+      .post(`/api/v1/don-hang/table/${qrToken}`)
       .set({ 'idempotency-key': stableKey })
       .send({
         items: [{ variantId, quantity: 1, optionIds: [] }],

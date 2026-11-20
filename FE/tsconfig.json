@@ -19,6 +19,21 @@
       }
     ],
     "paths": {
+      "@/thanh-phan/giao-dien/*": ["./src/thanh-phan/giao-dien/*"],
+      "@/thanh-phan/*": ["./src/thanh-phan/*"],
+      "@/tinh-nang/*": ["./src/tinh-nang/*"],
+      "@/thu-vien/*": ["./src/thu-vien/*"],
+      "@/moc-xu-ly/*": ["./src/moc-xu-ly/*"],
+      "@/components/ui/*": ["./src/thanh-phan/giao-dien/*"],
+      "@/components/*": ["./src/thanh-phan/*"],
+      "@/features/admin/*": ["./src/tinh-nang/quan-tri/*"],
+      "@/features/catalog/*": ["./src/tinh-nang/thuc-don/*"],
+      "@/features/fulfillment/*": ["./src/tinh-nang/dieu-phoi-bep/*"],
+      "@/features/inventory/views/*": ["./src/tinh-nang/kho-nguyen-lieu/giao-dien/*"],
+      "@/features/inventory/*": ["./src/tinh-nang/kho-nguyen-lieu/*"],
+      "@/features/tables/*": ["./src/tinh-nang/ban-an/*"],
+      "@/hooks/*": ["./src/moc-xu-ly/*"],
+      "@/lib/*": ["./src/thu-vien/*"],
       "@/*": ["./src/*"]
     }
   },

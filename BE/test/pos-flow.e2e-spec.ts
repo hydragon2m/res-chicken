@@ -133,18 +133,18 @@ describe('POS cash flow (e2e)', () => {
     ).toHaveLength(1);
     const [firstOpen, secondOpen] = await Promise.all([
       request(app.getHttpServer())
-        .post('/api/v1/shifts/open')
+        .post('/api/v1/ca-lam-viec/open')
         .set({ ...auth, 'idempotency-key': 'open-pos-flow-a' })
         .send({ storeId, openingCash: 100000 }),
       request(app.getHttpServer())
-        .post('/api/v1/shifts/open')
+        .post('/api/v1/ca-lam-viec/open')
         .set({ ...auth, 'idempotency-key': 'open-pos-flow-b' })
         .send({ storeId, openingCash: 100000 }),
     ]);
     expect([firstOpen.status, secondOpen.status].sort()).toEqual([201, 409]);
     const shift = firstOpen.status === 201 ? firstOpen : secondOpen;
     const currentShift = await request(app.getHttpServer())
-      .get(`/api/v1/shifts/current?storeId=${storeId}`)
+      .get(`/api/v1/ca-lam-viec/current?storeId=${storeId}`)
       .set(auth)
       .expect(200);
     expect(currentShift.body.id).toBe(shift.body.id);
@@ -181,7 +181,7 @@ describe('POS cash flow (e2e)', () => {
       payments: [expect.objectContaining({ id: payment.body.id, method: 'CASH', amount: 49000 })],
     });
     const adjusted = await request(app.getHttpServer())
-      .post(`/api/v1/shifts/${shift.body.id}/adjustments`)
+      .post(`/api/v1/ca-lam-viec/${shift.body.id}/adjustments`)
       .set({ ...auth, 'idempotency-key': 'adjust-pos-flow' })
       .send({ amount: 500, note: 'Till count' })
       .expect(201);
@@ -192,12 +192,12 @@ describe('POS cash flow (e2e)', () => {
       ),
     ).toBe(149500);
     await request(app.getHttpServer())
-      .post(`/api/v1/payments/${payment.body.id}/refund`)
+      .post(`/api/v1/thanh-toan/${payment.body.id}/refund`)
       .set({ ...auth, 'idempotency-key': 'refund-pos-flow' })
       .send({ note: 'Customer changed mind' })
       .expect(201);
     const refundedTicket = await request(app.getHttpServer())
-      .get(`/api/v1/fulfillment/tickets?storeId=${storeId}`)
+      .get(`/api/v1/dieu-phoi-bep/tickets?storeId=${storeId}`)
       .set(auth)
       .expect(200);
     expect(refundedTicket.body).toHaveLength(1);
@@ -221,7 +221,7 @@ describe('POS cash flow (e2e)', () => {
       data: { status: 'PREPARING', preparingAt: new Date(), preparingById: userId },
     });
     await request(app.getHttpServer())
-      .post(`/api/v1/payments/${preparedPayment.body.id}/refund`)
+      .post(`/api/v1/thanh-toan/${preparedPayment.body.id}/refund`)
       .set({ ...auth, 'idempotency-key': 'refund-prepared-pos-flow' })
       .send({ note: 'Too late to refund' })
       .expect(409);
@@ -253,7 +253,7 @@ describe('POS cash flow (e2e)', () => {
       .expect(201);
     const [closeRace, paymentRace] = await Promise.all([
       request(app.getHttpServer())
-        .post(`/api/v1/shifts/${shift.body.id}/close`)
+        .post(`/api/v1/ca-lam-viec/${shift.body.id}/close`)
         .set({ ...auth, 'idempotency-key': 'close-pos-flow' })
         .send({ declaredCash: 100500 }),
       request(app.getHttpServer())
@@ -272,17 +272,17 @@ describe('POS cash flow (e2e)', () => {
     });
 
     const secondShift = await request(app.getHttpServer())
-      .post('/api/v1/shifts/open')
+      .post('/api/v1/ca-lam-viec/open')
       .set({ ...auth, 'idempotency-key': 'second-open-pos-flow' })
       .send({ storeId, openingCash: 1000 })
       .expect(201);
     const [firstClose, secondClose] = await Promise.all([
       request(app.getHttpServer())
-        .post(`/api/v1/shifts/${secondShift.body.id}/close`)
+        .post(`/api/v1/ca-lam-viec/${secondShift.body.id}/close`)
         .set({ ...auth, 'idempotency-key': 'first-close-pos-flow' })
         .send({ declaredCash: 1000 }),
       request(app.getHttpServer())
-        .post(`/api/v1/shifts/${secondShift.body.id}/close`)
+        .post(`/api/v1/ca-lam-viec/${secondShift.body.id}/close`)
         .set({ ...auth, 'idempotency-key': 'second-close-pos-flow' })
         .send({ declaredCash: 2000 }),
     ]);
@@ -293,7 +293,7 @@ describe('POS cash flow (e2e)', () => {
     });
     expect(persisted.declaredCash).toBe(winner.body.declaredCash);
     const activity = await request(app.getHttpServer())
-      .get(`/api/v1/reports/activity?storeId=${storeId}`)
+      .get(`/api/v1/bao-cao/activity?storeId=${storeId}`)
       .set(auth)
       .expect(200);
     expect(activity.body.map((event: { action: string }) => event.action)).toEqual(

@@ -36,7 +36,7 @@ Lưu ý:
 - Lần chạy đầu tiên sẽ mất khoảng 2 - 4 phút để tải image và build.
 - Hệ thống sẽ tự động chạy theo thứ tự:
   1. Khởi tạo Database PostgreSQL 16 (cổng 5432)
-  2. Tự động chạy Migration tạo 26 bảng và nạp sẵn dữ liệu 2 chi nhánh + 6 tài khoản mẫu
+  2. Tự động chạy 21 bản Migration tạo đầy đủ 44 bảng dữ liệu và nạp sẵn dữ liệu mẫu toàn diện (44/44 bảng: Thực đơn, Biến thể, Lịch giá, Sốt/Topping, Kho FEFO, Lô hàng, Định mức BOM, Kiểm kê, Xuất hủy, Ca làm việc, Đơn hàng POS/QR, Thanh toán VietQR, Vé bếp KDS, Chiến dịch Khuyến mãi, Voucher, Bàn ăn, Đặt bàn, Nhật ký Audit) cho cả 2 chi nhánh (Q1 & Q7) + 6 vai trò tài khoản mẫu
   3. Khởi chạy Backend API NestJS (cổng 3001)
   4. Khởi chạy Frontend Web Next.js (cổng 3000)
 

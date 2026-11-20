@@ -210,12 +210,12 @@ describe('Recipe consumption at KDS preparation (e2e)', () => {
     const auth = { authorization: `Bearer ${token}` };
 
     await request(app.getHttpServer())
-      .post(`/api/v1/fulfillment/tickets/${ticket.id}/transition`)
+      .post(`/api/v1/dieu-phoi-bep/tickets/${ticket.id}/transition`)
       .set(auth)
       .send({ status: 'PREPARING' })
       .expect(201);
     await request(app.getHttpServer())
-      .post(`/api/v1/fulfillment/tickets/${ticket.id}/transition`)
+      .post(`/api/v1/dieu-phoi-bep/tickets/${ticket.id}/transition`)
       .set(auth)
       .send({ status: 'PREPARING' })
       .expect(201);
@@ -235,7 +235,7 @@ describe('Recipe consumption at KDS preparation (e2e)', () => {
       quantity: -120,
     });
     const stock = await request(app.getHttpServer())
-      .get(`/api/v1/inventory/stock?storeId=${storeId}`)
+      .get(`/api/v1/kho-nguyen-lieu/stock?storeId=${storeId}`)
       .set(auth)
       .expect(200);
     expect(stock.body).toEqual(
@@ -249,7 +249,7 @@ describe('Recipe consumption at KDS preparation (e2e)', () => {
       ]),
     );
     const alerts = await request(app.getHttpServer())
-      .get(`/api/v1/inventory/alerts?storeId=${storeId}`)
+      .get(`/api/v1/kho-nguyen-lieu/alerts?storeId=${storeId}`)
       .set(auth)
       .expect(200);
     expect(alerts.body.lowStock).toEqual(

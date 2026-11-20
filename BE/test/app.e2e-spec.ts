@@ -16,9 +16,9 @@ describe('HealthController (e2e)', () => {
     await app.init();
   });
 
-  it('/api/v1/health/live (GET)', () => {
+  it('/api/v1/kiem-tra-he-thong/live (GET)', () => {
     return request(app.getHttpServer())
-      .get('/api/v1/health/live')
+      .get('/api/v1/kiem-tra-he-thong/live')
       .expect(200)
       .expect({ status: 'ok' });
   });

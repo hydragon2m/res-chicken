@@ -85,22 +85,22 @@ describe('Inventory ledger flow (e2e)', () => {
   it('posts a receipt idempotently and preserves a reconciled balance through transfer, waste, and count', async () => {
     const auth = { authorization: `Bearer ${token}` };
     const supplier = await request(app.getHttpServer())
-      .post('/api/v1/inventory/suppliers')
+      .post('/api/v1/kho-nguyen-lieu/suppliers')
       .set(auth)
       .send({ storeId, name: 'Chicken supplier' })
       .expect(201);
     const storage = await request(app.getHttpServer())
-      .post('/api/v1/inventory/locations')
+      .post('/api/v1/kho-nguyen-lieu/locations')
       .set(auth)
       .send({ storeId, name: 'Dry storage', kind: 'STORAGE' })
       .expect(201);
     const prep = await request(app.getHttpServer())
-      .post('/api/v1/inventory/locations')
+      .post('/api/v1/kho-nguyen-lieu/locations')
       .set(auth)
       .send({ storeId, name: 'Prep bench', kind: 'PREP' })
       .expect(201);
     const ingredient = await request(app.getHttpServer())
-      .post('/api/v1/inventory/ingredients')
+      .post('/api/v1/kho-nguyen-lieu/ingredients')
       .set(auth)
       .send({ storeId, sku: 'CHK-THIGH', name: 'Chicken thigh', unit: 'GRAM' })
       .expect(201);
@@ -114,12 +114,12 @@ describe('Inventory ledger flow (e2e)', () => {
       ],
     };
     const first = await request(app.getHttpServer())
-      .post('/api/v1/inventory/receipts')
+      .post('/api/v1/kho-nguyen-lieu/receipts')
       .set({ ...auth, 'idempotency-key': 'receipt-001' })
       .send(body)
       .expect(201);
     const replay = await request(app.getHttpServer())
-      .post('/api/v1/inventory/receipts')
+      .post('/api/v1/kho-nguyen-lieu/receipts')
       .set({ ...auth, 'idempotency-key': 'receipt-001' })
       .send(body)
       .expect(201);
@@ -127,7 +127,7 @@ describe('Inventory ledger flow (e2e)', () => {
     const lotId = first.body.lines[0].lot.id as string;
 
     await request(app.getHttpServer())
-      .post('/api/v1/inventory/transfers')
+      .post('/api/v1/kho-nguyen-lieu/transfers')
       .set(auth)
       .send({
         storeId,
@@ -140,7 +140,7 @@ describe('Inventory ledger flow (e2e)', () => {
       })
       .expect(201);
     await request(app.getHttpServer())
-      .post('/api/v1/inventory/wastes')
+      .post('/api/v1/kho-nguyen-lieu/wastes')
       .set(auth)
       .send({
         storeId,
@@ -152,7 +152,7 @@ describe('Inventory ledger flow (e2e)', () => {
       })
       .expect(201);
     const count = await request(app.getHttpServer())
-      .post('/api/v1/inventory/counts')
+      .post('/api/v1/kho-nguyen-lieu/counts')
       .set(auth)
       .send({
         storeId,
@@ -166,7 +166,7 @@ describe('Inventory ledger flow (e2e)', () => {
     expect(count.body).toMatchObject({ expectedQuantity: 150, varianceQuantity: -20 });
 
     const stock = await request(app.getHttpServer())
-      .get(`/api/v1/inventory/stock?storeId=${storeId}`)
+      .get(`/api/v1/kho-nguyen-lieu/stock?storeId=${storeId}`)
       .set(auth)
       .expect(200);
     expect(stock.body).toEqual(
@@ -182,7 +182,7 @@ describe('Inventory ledger flow (e2e)', () => {
       ]),
     );
     const ledger = await request(app.getHttpServer())
-      .get(`/api/v1/inventory/ledger?storeId=${storeId}`)
+      .get(`/api/v1/kho-nguyen-lieu/ledger?storeId=${storeId}`)
       .set(auth)
       .expect(200);
     expect(ledger.body.map((entry: { type: string }) => entry.type)).toEqual(

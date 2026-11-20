@@ -17,7 +17,7 @@ import {
   TicketPercent,
   QrCode,
 } from 'lucide-react';
-import { getActor, getDefaultRouteForActor, ROLE_LABELS, type Actor } from '../lib/auth';
+import { getActor, getDefaultRouteForActor, ROLE_LABELS, type Actor } from '@/thu-vien/auth';
 
 type ModuleCard = {
   href: string;

@@ -102,7 +102,7 @@ describe('Fulfillment KDS flow (e2e)', () => {
       .send({ variantId, amount: 59000, startsAt: new Date(Date.now() - 60_000).toISOString() })
       .expect(201);
     await request(app.getHttpServer())
-      .post('/api/v1/shifts/open')
+      .post('/api/v1/ca-lam-viec/open')
       .set({ ...auth, 'idempotency-key': 'kds-open' })
       .send({ storeId, openingCash: 0 })
       .expect(201);
@@ -117,7 +117,7 @@ describe('Fulfillment KDS flow (e2e)', () => {
       .send({ method: 'QR_MANUAL', amount: order.body.totalAmount })
       .expect(201);
     const queued = await request(app.getHttpServer())
-      .get(`/api/v1/fulfillment/tickets?storeId=${storeId}`)
+      .get(`/api/v1/dieu-phoi-bep/tickets?storeId=${storeId}`)
       .set(auth)
       .expect(200);
     expect(queued.body).toHaveLength(1);
@@ -129,7 +129,7 @@ describe('Fulfillment KDS flow (e2e)', () => {
     const ticketId = queued.body[0].id as string;
     const transition = async (status: string) =>
       request(app.getHttpServer())
-        .post(`/api/v1/fulfillment/tickets/${ticketId}/transition`)
+        .post(`/api/v1/dieu-phoi-bep/tickets/${ticketId}/transition`)
         .set(auth)
         .send({ status });
     expect((await transition('PREPARING')).body).toMatchObject({
@@ -146,7 +146,7 @@ describe('Fulfillment KDS flow (e2e)', () => {
     });
     expect((await transition('HANDED_OVER')).body.events).toHaveLength(4);
     await request(app.getHttpServer())
-      .post(`/api/v1/fulfillment/tickets/${ticketId}/transition`)
+      .post(`/api/v1/dieu-phoi-bep/tickets/${ticketId}/transition`)
       .set(auth)
       .send({ status: 'PREPARING' })
       .expect(409);
